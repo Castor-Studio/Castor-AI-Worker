@@ -182,7 +182,7 @@
                 <Button Grid.Column="2" Content="Clear" Command="{Binding ClearAudioCommand}" Margin="6,0,0,0" />
               </Grid>
 
-              <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding ShowVideo}">
+              <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
                   <Run Text="video: " />
                   <Run Text="{Binding VideoFileName}" />
