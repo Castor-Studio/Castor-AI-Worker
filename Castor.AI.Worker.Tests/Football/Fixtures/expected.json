@@ -1,0 +1,79 @@
+{
+  "width": 640,
+  "height": 360,
+  "frames": {
+    "pitch_ball": {
+      "python": [
+        {
+          "class": 32,
+          "confidence": 0.6758
+        }
+      ],
+      "python_fp32": [
+        {
+          "class": 32,
+          "confidence": 0.6741
+        }
+      ],
+      "rgb_fp32": [
+        {
+          "class": 32,
+          "confidence": 0.4725
+        }
+      ]
+    },
+    "pitch_empty": {
+      "python": [],
+      "python_fp32": [],
+      "rgb_fp32": []
+    },
+    "zidane": {
+      "python": [
+        {
+          "class": 0,
+          "confidence": 0.9478
+        },
+        {
+          "class": 0,
+          "confidence": 0.8711
+        },
+        {
+          "class": 27,
+          "confidence": 0.5508
+        }
+      ],
+      "python_fp32": [
+        {
+          "class": 0,
+          "confidence": 0.9479
+        },
+        {
+          "class": 0,
+          "confidence": 0.8716
+        },
+        {
+          "class": 27,
+          "confidence": 0.5487
+        }
+      ],
+      "rgb_fp32": [
+        {
+          "class": 0,
+          "confidence": 0.9465
+        },
+        {
+          "class": 0,
+          "confidence": 0.8844
+        },
+        {
+          "class": 27,
+          "confidence": 0.7444
+        },
+        {
+          "class": 27,
+          "confidence": 0.3948
+        }
+      ]
+    }
+  }
+}
