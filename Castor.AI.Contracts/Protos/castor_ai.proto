@@ -1,0 +1,353 @@
+// Castor AI <-> App contract, v1.
+//
+// One worker process = one domain (podcast, football, basket, ...).
+// The app (Castor-Studio) talks to workers only through this contract,
+// whether the worker runs locally (LocalProvider) or in the cloud (CloudProvider).
+//
+// Control, payloads and decisions travel over gRPC.
+// Video and audio never travel inside gRPC messages: they go through a
+// media transport (shared memory locally, encoded stream in the cloud).
+// gRPC only carries small "media ready" notifications.
+//
+// Time: every timestamp is `*_us`, microseconds on the session clock.
+// The session clock is owned by the app: 0 = SessionStart, monotonic.
+
+syntax = "proto3";
+
+package castor.ai.v1;
+
+option csharp_namespace = "Castor.AI.Contracts.V1";
+
+import "google/protobuf/struct.proto";
+
+// ---------------------------------------------------------------------------
+// Worker service (implemented by every worker, local and cloud)
+// ---------------------------------------------------------------------------
+
+service AiWorker {
+  // Static description of what the worker can do. Called before any session.
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (WorkerCapabilities);
+
+  // Liveness/readiness probe. Used by LocalProvider supervision and cloud LB.
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // One long-lived bidirectional stream per session.
+  // First client message MUST be `start`. Worker answers `accepted` or `error`.
+  rpc Session(stream ClientMessage) returns (stream WorkerMessage);
+}
+
+// ---------------------------------------------------------------------------
+// Cloud gateway service (design only, not implemented in the prototype)
+// ---------------------------------------------------------------------------
+
+service AiGateway {
+  // Picks a worker pod for the session and returns where to connect.
+  // The returned endpoint is pinned for the whole session (session affinity).
+  rpc AllocateSession(AllocateSessionRequest) returns (SessionAllocation);
+  rpc ReleaseSession(ReleaseSessionRequest) returns (ReleaseSessionResponse);
+}
+
+message AllocateSessionRequest {
+  string domain = 1;
+  uint32 camera_count = 2;
+  repeated InputKind inputs = 3;
+}
+
+message SessionAllocation {
+  string allocation_id = 1;
+  string worker_endpoint = 2;  // gRPC endpoint of the AiWorker pod.
+  string ingest_uri = 3;       // Where to push the encoded media (e.g. srt://...).
+  string access_token = 4;     // Short-lived, scoped to this allocation.
+}
+
+message ReleaseSessionRequest { string allocation_id = 1; }
+message ReleaseSessionResponse {}
+
+// ---------------------------------------------------------------------------
+// Capabilities / health
+// ---------------------------------------------------------------------------
+
+message GetCapabilitiesRequest {}
+
+enum InputKind {
+  INPUT_KIND_UNSPECIFIED = 0;
+  INPUT_KIND_PAYLOAD = 1;
+  INPUT_KIND_VIDEO = 2;
+  INPUT_KIND_AUDIO = 3;
+}
+
+enum TransportKind {
+  TRANSPORT_KIND_UNSPECIFIED = 0;
+  TRANSPORT_KIND_SHARED_MEMORY = 1;
+  TRANSPORT_KIND_ENCODED_STREAM = 2;
+}
+
+enum PixelFormat {
+  PIXEL_FORMAT_UNSPECIFIED = 0;
+  PIXEL_FORMAT_BGRA8 = 1;
+  PIXEL_FORMAT_RGB24 = 2;
+  PIXEL_FORMAT_NV12 = 3;
+}
+
+enum SampleFormat {
+  SAMPLE_FORMAT_UNSPECIFIED = 0;
+  SAMPLE_FORMAT_F32_INTERLEAVED = 1;
+}
+
+message VideoFormat {
+  uint32 width = 1;
+  uint32 height = 2;
+  PixelFormat pixel_format = 3;
+  double fps = 4;
+}
+
+message AudioFormat {
+  uint32 sample_rate = 1;
+  uint32 channels = 2;
+  SampleFormat sample_format = 3;
+}
+
+message WorkerCapabilities {
+  string worker_id = 1;              // Instance id (unique per process/pod).
+  string domain = 2;                 // "podcast", "football", ...
+  string version = 3;
+  repeated InputKind required_inputs = 4;
+  repeated InputKind optional_inputs = 5;
+  repeated TransportKind transports = 6;
+  uint32 max_cameras = 7;            // Hard limit; app must not exceed it.
+  VideoFormat preferred_video = 8;   // App downscales to this before writing.
+  AudioFormat preferred_audio = 9;
+  repeated string payload_types = 10; // PayloadEvent.type values understood.
+  repeated MetricDescriptor metrics = 11;   // What WorkerStats will carry, for generic UIs.
+  repeated FlagDescriptor camera_flags = 12; // Per-camera boolean states WorkerStats may raise.
+}
+
+// Domain-specific value published in WorkerStats. Lets a debug UI plot any
+// worker without knowing its domain.
+message MetricDescriptor {
+  enum Scope {
+    SCOPE_UNSPECIFIED = 0;
+    SCOPE_SESSION = 1;               // WorkerStats.metrics[key]
+    SCOPE_CAMERA = 2;                // WorkerStats.cameras[camera_id].metrics[key]
+  }
+  string key = 1;
+  string label = 2;
+  string unit = 3;
+  double min = 4;                    // Display range.
+  double max = 5;
+  Scope scope = 6;
+}
+
+message FlagDescriptor {
+  string key = 1;                    // WorkerStats.cameras[camera_id].flags entry.
+  string label = 2;
+  string description = 3;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_STARTING = 1;   // Loading models.
+    STATUS_READY = 2;
+    STATUS_BUSY = 3;       // At capacity (cloud: LB should skip it).
+    STATUS_DEGRADED = 4;   // Running but slower than real time.
+  }
+  Status status = 1;
+  uint32 active_sessions = 2;
+  string detail = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Session stream: app -> worker
+// ---------------------------------------------------------------------------
+
+message ClientMessage {
+  oneof body {
+    SessionStart start = 1;
+    PayloadEvent payload = 2;
+    VideoFrameReady video_frame = 3;
+    AudioReady audio = 4;
+    CameraOnAir on_air = 5;
+    SessionStop stop = 6;
+  }
+}
+
+message SessionStart {
+  string session_id = 1;
+  string domain = 2;
+  repeated CameraDescriptor cameras = 3;
+  MediaTransport transport = 4;
+  map<string, string> params = 5;    // Domain-specific tuning.
+}
+
+message CameraDescriptor {
+  string camera_id = 1;
+  string label = 2;                  // Human readable, for reasons/UI.
+  string role = 3;                   // Hint: "wide", "closeup", "host", "guest"...
+  int32 audio_channel = 4;           // Mic channel tied to this camera, -1 = none.
+}
+
+message MediaTransport {
+  oneof kind {
+    SharedMemoryTransport shared_memory = 1;
+    EncodedStreamTransport encoded_stream = 2;
+  }
+}
+
+// Local only. Layout of regions documented in docs/architecture.md.
+message SharedMemoryTransport {
+  repeated VideoRegion video = 1;    // One region per camera.
+  AudioRegion audio = 2;             // Optional.
+}
+
+message VideoRegion {
+  string camera_id = 1;
+  string name = 2;                   // OS name of the mapping.
+  uint64 size_bytes = 3;
+}
+
+message AudioRegion {
+  string name = 1;
+  uint64 size_bytes = 2;
+}
+
+// Cloud only (design). Media pushed by the app to SessionAllocation.ingest_uri.
+message EncodedStreamTransport {
+  string ingest_uri = 1;
+  string codec = 2;                  // "h264", "opus", ...
+  // camera_id -> stream index inside the container.
+  map<string, uint32> camera_streams = 3;
+  int32 audio_stream = 4;            // -1 = none.
+}
+
+// Arbitrary structured data from the app (score update, chat event,
+// manual marker, ...). Typed by `type`, see WorkerCapabilities.payload_types.
+message PayloadEvent {
+  int64 pts_us = 1;
+  string type = 2;
+  google.protobuf.Struct data = 3;
+}
+
+// Doorbell: a new frame was written in the camera region.
+// The SHM slot header is authoritative; this only avoids polling.
+message VideoFrameReady {
+  string camera_id = 1;
+  uint64 seq = 2;
+  int64 pts_us = 3;
+}
+
+// Doorbell: audio ring buffer advanced.
+message AudioReady {
+  uint64 write_frame = 1;            // Total frames written since start.
+  int64 pts_us = 2;                  // pts of `write_frame`.
+}
+
+// Feedback: what the app actually put on air (after arbitration or manual
+// override). Lets the worker keep a correct state ("how long on this shot").
+message CameraOnAir {
+  string camera_id = 1;
+  int64 pts_us = 2;
+  bool manual = 3;
+}
+
+message SessionStop {
+  string reason = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Session stream: worker -> app
+// ---------------------------------------------------------------------------
+
+message WorkerMessage {
+  oneof body {
+    SessionAccepted accepted = 1;
+    SceneDecision decision = 2;
+    WorkerStats stats = 3;
+    WorkerLog log = 4;
+    SessionError error = 5;
+    SessionEnded ended = 6;
+  }
+}
+
+message SessionAccepted {
+  string session_id = 1;
+  WorkerCapabilities capabilities = 2;
+}
+
+// A suggestion. The app stays the final authority (arbiter: hysteresis,
+// min hold, staleness, manual override).
+message SceneDecision {
+  string decision_id = 1;
+  int64 source_pts_us = 2;           // pts of the newest input used.
+  string camera_id = 3;              // Target shot.
+  string scene_id = 4;               // Optional: higher-level scene/layout.
+  float confidence = 5;              // 0..1
+  Transition transition = 6;
+  uint32 min_hold_ms = 7;            // Do not cut away before this.
+  string reason = 8;                 // Human readable, for debug UI.
+  repeated CameraScore scores = 9;   // Per-camera score, for debug UI.
+  float processing_ms = 10;          // Worker-side compute time.
+}
+
+message Transition {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_CUT = 1;
+    KIND_DISSOLVE = 2;
+  }
+  Kind kind = 1;
+  uint32 duration_ms = 2;
+}
+
+message CameraScore {
+  string camera_id = 1;
+  float score = 2;
+}
+
+message WorkerStats {
+  int64 pts_us = 1;
+  float inference_ms_avg = 2;
+  map<string, float> fps_per_camera = 3;
+  uint64 frames_dropped = 4;         // Skipped by latest-wins policy.
+  uint64 frames_torn = 5;            // Rejected by SHM seq check.
+  map<string, double> metrics = 6;   // Session-scope metrics, keys from capabilities.metrics.
+  map<string, CameraStats> cameras = 7; // camera_id -> camera-scope metrics and flags.
+  string detail = 8;                 // Domain diagnostics, human readable.
+}
+
+message CameraStats {
+  map<string, double> metrics = 1;   // Keys from capabilities.metrics (SCOPE_CAMERA).
+  repeated string flags = 2;         // Keys from capabilities.camera_flags currently raised.
+}
+
+message WorkerLog {
+  enum Level {
+    LEVEL_UNSPECIFIED = 0;
+    LEVEL_DEBUG = 1;
+    LEVEL_INFO = 2;
+    LEVEL_WARNING = 3;
+    LEVEL_ERROR = 4;
+  }
+  Level level = 1;
+  string message = 2;
+}
+
+message SessionError {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_UNSUPPORTED_DOMAIN = 1;
+    CODE_TOO_MANY_CAMERAS = 2;
+    CODE_TRANSPORT_FAILED = 3;
+    CODE_BAD_FORMAT = 4;
+    CODE_INTERNAL = 5;
+  }
+  Code code = 1;
+  string message = 2;
+  bool fatal = 3;                    // true = session is over.
+}
+
+message SessionEnded {
+  string reason = 1;
+}
