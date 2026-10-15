@@ -44,7 +44,9 @@ public sealed partial class CameraViewModel : ObservableObject
         RawColor = Charts.Palette.At(index);
         _audioFile = profile.AudioFile is { } file && File.Exists(file) ? file : null;
         _videoFile = profile.VideoFile is { } video && File.Exists(video) ? video : null;
-        _showVideo = _videoFile is not null;
+        // Until the worker reports its capabilities, keep the picker available so video
+        // input can be configured before starting a session.
+        _showVideo = true;
         foreach (var action in actions.Where(a => !a.RequiresAudio || HasAudio))
         {
             Actions.Add(new CameraActionViewModel(this, action, host));
