@@ -4,7 +4,7 @@ SDK client de l'IA de réalisation pour Castor Studio : il démarre un worker IA
 l'audio et les indications de l'app, et remonte les plans suggérés. Aucune dépendance UI (pas d'Avalonia).
 
 ```
-Castor.AI            ← référencé par l'app (Castor Studio, Castor.Proto.App)
+Castor.AI            ← référencé par l'app (Castor Studio, Castor.AI.Dashboard)
   └ Castor.AI.Contracts   contrat gRPC + format mémoire partagée (partagé avec les workers)
 Castor.AI.Worker     ← exécutable lancé par le SDK (un domaine par process : podcast, ...)
 ```

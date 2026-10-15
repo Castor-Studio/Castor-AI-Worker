@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace Castor.Proto.App.Charts;
+namespace Castor.AI.Dashboard.Charts;
 
 /// <summary>
 /// One row per camera: on-air segments (AI / manual / initial) and AI suggestions

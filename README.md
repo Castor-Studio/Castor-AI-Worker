@@ -9,7 +9,7 @@ repo et utilise celui-ci à travers le SDK client et l'exécutable du worker.
 | `Castor.AI` | SDK client référencé par Castor Studio (`AiClient`) : lance le worker, lui envoie audio et vidéo, remonte les plans suggérés. Voir [Castor.AI/README.md](Castor.AI/README.md). |
 | `Castor.AI.Contracts` | Contrat gRPC (`castor_ai.proto`) et formats de mémoire partagée, communs au SDK et au worker. |
 | `Castor.AI.Worker` | Process worker, un domaine par process : `podcast` (Silero VAD), `football` (détection du ballon, YOLO). |
-| `Castor.Proto.App` | Console de debug Avalonia pour l'équipe IA, pilotée par `profiles/*.json`. |
+| `Castor.AI.Dashboard` | Console de debug Avalonia pour l'équipe IA, pilotée par `profiles/*.json`. |
 | `Castor.AI.Tests`, `Castor.AI.Worker.Tests` | Tests xUnit, dont la parité avec les modules Python de Castor-AI. |
 
 Architecture, format de la mémoire partagée, stratégies par domaine et gestion des modèles :
@@ -22,7 +22,7 @@ pour lire des fichiers de test.
 
 ```
 dotnet test Castor.AI.Worker.sln
-dotnet run --project Castor.Proto.App
+dotnet run --project Castor.AI.Dashboard
 ```
 
 Aucun script à lancer pour les modèles : le worker (et les tests) téléchargent ceux qui manquent depuis la

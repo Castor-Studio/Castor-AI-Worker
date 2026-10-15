@@ -1,6 +1,6 @@
 using Avalonia.Media;
 
-namespace Castor.Proto.App.ViewModels;
+namespace Castor.AI.Dashboard.ViewModels;
 
 public sealed record DecisionItem(
     string Time,

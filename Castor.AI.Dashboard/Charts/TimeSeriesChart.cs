@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace Castor.Proto.App.Charts;
+namespace Castor.AI.Dashboard.Charts;
 
 /// <summary>Scrolling line chart of a <see cref="ChartModel"/> (last N seconds, newest on the right).</summary>
 public sealed class TimeSeriesChart : Control

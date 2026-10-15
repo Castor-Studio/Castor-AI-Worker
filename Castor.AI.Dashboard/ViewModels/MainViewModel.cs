@@ -7,16 +7,16 @@ using Castor.AI;
 using Castor.AI.Contracts.V1;
 using Castor.AI.Providers;
 using Castor.AI.Providers.Local;
-using Castor.Proto.App.Audio;
-using Castor.Proto.App.Charts;
-using Castor.Proto.App.Profiles;
-using Castor.Proto.App.Video;
+using Castor.AI.Dashboard.Audio;
+using Castor.AI.Dashboard.Charts;
+using Castor.AI.Dashboard.Profiles;
+using Castor.AI.Dashboard.Video;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 
-namespace Castor.Proto.App.ViewModels;
+namespace Castor.AI.Dashboard.ViewModels;
 
 /// <summary>
 /// Debug console for the AI team: runs one session of any worker domain described by a

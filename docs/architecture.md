@@ -274,7 +274,7 @@ Castor-AI-Worker/
   Castor.AI/               SDK client (AiClient, LocalWorkerProvider, arbitre, flux audio) : référencé par Castor Studio
   Castor.AI.Contracts/     contrat : proto + code gRPC généré + format SHM (partagé SDK / workers)
   Castor.AI.Worker/        console : serveur gRPC (named pipe), lecture SHM, stratégies par domaine
-  Castor.Proto.App/        console de debug Avalonia, n'utilise l'IA qu'à travers Castor.AI
+  Castor.AI.Dashboard/        console de debug Avalonia, n'utilise l'IA qu'à travers Castor.AI
   Castor.AI.Tests/         xUnit : AiClient, arbitre, flux audio, flux vidéo
   Castor.AI.Worker.Tests/  xUnit : director, rôles, VAD, rings audio et vidéo, football (parité Python)
   Castor.AI.Worker.sln
@@ -348,7 +348,7 @@ l'énergie, qui conserve l'écart de niveau entre micros pendant la pause). Le d
 ```
 powershell -ExecutionPolicy Bypass -File scripts/generate-sample-dialogue.ps1
 dotnet test
-dotnet run --project Castor.Proto.App
+dotnet run --project Castor.AI.Dashboard
 ```
 
 `generate-sample-dialogue.ps1` crée `samples/host.wav`, `guest.wav`, `guest2.wav` : un dialogue TTS de 52 s
@@ -426,7 +426,7 @@ cd ../Castor-AI
 uv run --no-sync python -I ../Castor-AI-Worker/scripts/generate_football_fixtures.py ../Castor-AI-Worker/Castor.AI.Worker.Tests/Football/Fixtures ../Castor-AI-Worker/samples
 cd ../Castor-AI-Worker
 dotnet test
-dotnet run --project Castor.Proto.App -- --autostart "Football - 2 cameras"
+dotnet run --project Castor.AI.Dashboard -- --autostart "Football - 2 cameras"
 ```
 
 Le profil `profiles/football.json` lit `samples/football_left.mp4` et `football_right.mp4` (ballon à gauche

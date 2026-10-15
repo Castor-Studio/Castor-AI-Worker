@@ -6,7 +6,7 @@ using Avalonia.Platform;
 using Castor.AI;
 using Castor.AI.Contracts.V1;
 
-namespace Castor.Proto.App.Video;
+namespace Castor.AI.Dashboard.Video;
 
 /// <summary>
 /// Test camera for <see cref="AiClient.WriteVideo"/>. Castor Studio does the same from its OBS scenes.
