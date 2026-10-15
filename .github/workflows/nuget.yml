@@ -1,0 +1,49 @@
+name: NuGet
+
+# Builds, tests and packs the client SDK (Castor.AI + Castor.AI.Contracts).
+# Pushes the packages to GitHub Packages only on v*.*.* tags (package version = tag without the "v").
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0-ci.${{ github.run_number }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test
+        run: dotnet test Castor.AI.Tests/Castor.AI.Tests.csproj -c Release
+
+      - name: Pack
+        run: |
+          dotnet pack Castor.AI.Contracts/Castor.AI.Contracts.csproj -c Release -o out -p:Version=$VERSION
+          dotnet pack Castor.AI/Castor.AI.csproj -c Release -o out -p:Version=$VERSION
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-${{ env.VERSION }}
+          path: out/*.nupkg
+
+      - name: Push
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: dotnet nuget push "out/*.nupkg" --source https://nuget.pkg.github.com/Castor-Studio/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate

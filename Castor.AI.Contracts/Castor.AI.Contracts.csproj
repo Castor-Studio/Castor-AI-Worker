@@ -8,6 +8,16 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- NuGet package (published by .github/workflows/nuget.yml on v*.*.* tags). -->
+  <PropertyGroup>
+    <PackageId>Castor.AI.Contracts</PackageId>
+    <Version>0.0.0-dev</Version>
+    <Authors>Castor Studio</Authors>
+    <Description>Wire contract shared by the Castor.AI client SDK and the AI workers: gRPC messages and shared memory layout.</Description>
+    <RepositoryUrl>https://github.com/Castor-Studio/Castor-AI-Worker</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.29.3" />
     <PackageReference Include="Grpc.Core.Api" Version="2.67.0" />
