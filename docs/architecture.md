@@ -467,9 +467,11 @@ entre domaines, tous les modèles d'une version étant côte à côte dans une m
 | Ballon (YOLOv9c COCO) | `checkpoint_5_416.onnx` (100 Mo) | `scripts/export-football-model.ps1` |
 
 **Configuration** : tout est dans `Castor.AI.Worker/Models/models.json`, embarqué dans le worker :
-`repository` et `release_tag` donnent l'URL de la release, chaque entrée donne `domain`, `file`, `sha256`,
-et au besoin `url` (autre source pour ce modèle) ou `upstream` (où le script de publication récupère un
-modèle que ce repo ne produit pas). Changer un lien = éditer ce fichier, pas le code.
+`repository` et `release_tag` désignent la release, chaque entrée donne `domain`, `file`, `sha256` et `url`,
+son lien de téléchargement. Seuls les liens de cette release sont acceptés
+(`https://github.com/<repository>/releases/download/<release_tag>/<file>`) : le worker refuse un
+`models.json` qui pointe ailleurs, aucune source tierce ne peut s'y glisser. Changer un lien = éditer ce
+fichier, pas le code.
 `CASTOR_MODELS_MANIFEST=<chemin d'un models.json>` le remplace à l'exécution, sans rebuild.
 
 **Publier** : `scripts/publish-models.ps1` (`-DryRun` pour voir sans publier) lit `models.json`, vérifie

@@ -13,9 +13,10 @@ public sealed record ModelSpec(string Domain, string FileName, string Sha256, st
 }
 
 /// <summary>
-/// Every model of every domain, read from <c>models.json</c> (embedded resource): where they are hosted and
-/// their SHA-256. Changing a link or a model = editing that file, not this code.
-/// <c>CASTOR_MODELS_MANIFEST</c> points to another <c>models.json</c>, for tests or a mirror without a rebuild.
+/// Every model of every domain, read from <c>models.json</c> (embedded resource): its download link, always an
+/// asset of this repository's models release, and its SHA-256.
+/// Changing a link or a model = editing that file, not this code.
+/// <c>CASTOR_MODELS_MANIFEST</c> points to another <c>models.json</c> (tests, another release) without a rebuild.
 /// </summary>
 public static class ModelCatalog
 {
@@ -58,7 +59,15 @@ public static class ModelCatalog
                 throw new InvalidDataException($"models.json: entry '{m.Domain}/{m.File}' needs domain, file and a SHA-256");
             }
 
-            return new ModelSpec(m.Domain, m.File, m.Sha256.ToLowerInvariant(), m.Url ?? $"{releaseUrl}/{m.File}");
+            // Only this repository's release: no third-party source can slip into the worker.
+            var expected = $"{releaseUrl}/{m.File}";
+            if (!string.Equals(m.Url, expected, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"models.json: '{m.Domain}/{m.File}' must be downloaded from {expected}, not '{m.Url}'");
+            }
+
+            return new ModelSpec(m.Domain, m.File, m.Sha256.ToLowerInvariant(), m.Url);
         }).ToList();
 
         var duplicate = specs.GroupBy(s => s.FileName).FirstOrDefault(g => g.Count() > 1);
@@ -92,9 +101,8 @@ public static class ModelCatalog
 
     private sealed record ManifestFile(string Repository, string ReleaseTag, List<ManifestModel> Models);
 
-    /// <param name="Url">Optional: replaces the release asset URL for this model.</param>
-    /// <param name="Upstream">Where scripts/publish-models.ps1 fetches a model this repository does not produce.</param>
-    private sealed record ManifestModel(string Domain, string File, string Sha256, string? Url, string? Upstream);
+    /// <param name="Url">Release asset of this repository: <c>https://github.com/{repository}/releases/download/{release_tag}/{file}</c>.</param>
+    private sealed record ManifestModel(string Domain, string File, string Sha256, string? Url);
 }
 
 public sealed record ModelManifest(string ReleaseUrl, IReadOnlyList<ModelSpec> Specs);

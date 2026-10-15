@@ -1,24 +1,26 @@
 {
   // Models downloaded by the worker when they are not installed (ModelCatalog, ModelProvisioner).
-  // Hosted as assets of the GitHub release `release_tag` of `repository`, published by scripts/publish-models.ps1.
+  // Every model is an asset of the GitHub release `release_tag` of `repository`, published by
+  // scripts/publish-models.ps1; `url` must point to that release (checked when the worker loads this file).
   // Release assets never change: a new model gets a new file name and SHA-256 (and a new release tag if needed).
   // Embedded in the worker; CASTOR_MODELS_MANIFEST=<path to a models.json> replaces it without a rebuild.
   "repository": "Castor-Studio/Castor-AI-Worker",
   "release_tag": "models-v1",
   "models": [
     {
+      // Silero VAD v6.2.1 (MIT), same version as Castor-AI (silero-vad==6.2.1).
       "domain": "podcast",
       "file": "silero_vad.onnx",
       "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
-      // Silero VAD v6.2.1 (MIT), same version as Castor-AI (silero-vad==6.2.1). Mirrored from upstream.
-      "upstream": "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx"
+      "url": "https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1/silero_vad.onnx"
     },
     {
-      "domain": "football",
-      "file": "checkpoint_5_416.onnx",
       // Castor-AI checkpoint_5.pt exported by scripts/export-football-model.ps1. The export is not
       // byte-reproducible: publish exactly the file this hash was taken from.
-      "sha256": "c25e2369251fc35633326c7b17c5bd0e591f1e261dddd0912d5ecead9614e2dc"
+      "domain": "football",
+      "file": "checkpoint_5_416.onnx",
+      "sha256": "c25e2369251fc35633326c7b17c5bd0e591f1e261dddd0912d5ecead9614e2dc",
+      "url": "https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1/checkpoint_5_416.onnx"
     }
   ]
 }

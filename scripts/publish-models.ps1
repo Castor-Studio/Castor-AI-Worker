@@ -15,14 +15,8 @@ $tag = $manifest.release_tag
 
 $assets = foreach ($model in $manifest.models) {
     $path = Join-Path $root "packs/$($model.domain)/models/$($model.file)"
-    if (-not (Test-Path $path) -and $model.upstream) {
-        New-Item -ItemType Directory -Force (Split-Path -Parent $path) | Out-Null
-        Write-Host "[get]  $($model.file) <- $($model.upstream)"
-        Invoke-WebRequest -Uri $model.upstream -OutFile $path -UseBasicParsing
-    }
-
     if (-not (Test-Path $path)) {
-        throw "$path missing (football: scripts/export-football-model.ps1)"
+        throw "$path missing: download it from the release or, for football, run scripts/export-football-model.ps1"
     }
 
     $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()

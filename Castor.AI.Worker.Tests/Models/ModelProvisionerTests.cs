@@ -113,6 +113,7 @@ public sealed class ModelProvisionerTests : IDisposable
 public class ModelCatalogTests
 {
     private const string Sha = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3";
+    private const string Release = "https://github.com/owner/repo/releases/download/models-v2";
 
     [Fact]
     public void Embedded_manifest_points_to_the_worker_repository_release()
@@ -123,7 +124,7 @@ public class ModelCatalogTests
     }
 
     [Fact]
-    public void Url_of_an_entry_overrides_the_release_asset()
+    public void Explicit_release_links_are_read()
     {
         var manifest = ModelCatalog.Parse($$"""
             {
@@ -131,22 +132,25 @@ public class ModelCatalogTests
               "repository": "owner/repo",
               "release_tag": "models-v2",
               "models": [
-                { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}" },
-                { "domain": "b", "file": "b.onnx", "sha256": "{{Sha.ToUpperInvariant()}}", "url": "https://mirror.test/b.onnx" },
+                { "domain": "a", "file": "a.onnx", "sha256": "{{Sha.ToUpperInvariant()}}", "url": "{{Release}}/a.onnx" },
               ]
             }
             """);
 
-        Assert.Equal("https://github.com/owner/repo/releases/download/models-v2", manifest.ReleaseUrl);
-        Assert.Equal("https://github.com/owner/repo/releases/download/models-v2/a.onnx", manifest.Specs[0].Url);
-        Assert.Equal("https://mirror.test/b.onnx", manifest.Specs[1].Url);
-        Assert.Equal(Sha, manifest.Specs[1].Sha256);
+        Assert.Equal(Release, manifest.ReleaseUrl);
+        Assert.Equal($"{Release}/a.onnx", manifest.Specs[0].Url);
+        Assert.Equal(Sha, manifest.Specs[0].Sha256);
     }
 
     [Theory]
     [InlineData("""{ "repository": "o/r", "models": [] }""")]
-    [InlineData("""{ "repository": "o/r", "release_tag": "t", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "abc" } ] }""")]
-    [InlineData($$"""{ "repository": "o/r", "release_tag": "t", "models": [ { "domain": "a", "file": "x.onnx", "sha256": "{{Sha}}" }, { "domain": "b", "file": "x.onnx", "sha256": "{{Sha}}" } ] }""")]
+    [InlineData("""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "abc", "url": "https://github.com/owner/repo/releases/download/models-v2/a.onnx" } ] }""")]
+    [InlineData($$"""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "x.onnx", "sha256": "{{Sha}}", "url": "{{Release}}/x.onnx" }, { "domain": "b", "file": "x.onnx", "sha256": "{{Sha}}", "url": "{{Release}}/x.onnx" } ] }""")]
+    // Links outside this repository's release, or missing, are refused.
+    [InlineData($$"""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}" } ] }""")]
+    [InlineData($$"""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}", "url": "https://mirror.test/a.onnx" } ] }""")]
+    [InlineData($$"""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}", "url": "https://github.com/other/repo/releases/download/models-v2/a.onnx" } ] }""")]
+    [InlineData($$"""{ "repository": "owner/repo", "release_tag": "models-v2", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}", "url": "https://github.com/owner/repo/releases/download/models-v1/a.onnx" } ] }""")]
     public void Invalid_manifest_is_rejected(string json) =>
         Assert.Throws<InvalidDataException>(() => ModelCatalog.Parse(json));
 }
