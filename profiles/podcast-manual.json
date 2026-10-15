@@ -1,0 +1,26 @@
+{
+  // No audio: the director only sees the "Talking" toggles (client metadata path of the Python module).
+  "name": "Podcast - manual hints only",
+  "domain": "podcast",
+  "description": "No microphones. Drive the director with the Talking / Empty chair toggles.",
+  "params": { "min_speech_confirm_ms": "100", "min_hold_time": "1.5" },
+  "initial_camera": "cam-wide",
+  "cameras": [
+    { "id": "cam-wide", "label": "Wide", "role": "wide" },
+    { "id": "cam-host", "label": "Host", "role": "host" },
+    { "id": "cam-guest1", "label": "Guest 1", "role": "guest" },
+    { "id": "cam-guest2", "label": "Guest 2", "role": "guest2" }
+  ],
+  "camera_actions": [
+    {
+      "label": "Talking",
+      "on": { "type": "camera.metadata", "data": { "is_speaking": true } },
+      "off": { "type": "camera.metadata", "data": { "is_speaking": false } }
+    },
+    {
+      "label": "Empty chair",
+      "on": { "type": "camera.metadata", "data": { "person_detected": false } },
+      "off": { "type": "camera.metadata", "data": { "person_detected": null } }
+    }
+  ]
+}

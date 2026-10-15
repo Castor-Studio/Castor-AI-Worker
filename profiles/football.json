@@ -1,0 +1,24 @@
+{
+  // Football worker on the generated demo clips (scripts/generate_football_fixtures.py, samples folder):
+  // the ball alternates between the two cameras every 3 s. Needs ffmpeg; without it, pick
+  // samples/football_ball.png / football_empty.png with the "File..." button of each camera.
+  "name": "Football - 2 cameras",
+  "domain": "football",
+  "description": "Ball detection (YOLO, Castor-AI checkpoint_5) on each camera; cut to the one that alone sees the ball.",
+  "params": {
+    "default_confidence": "1.0",
+    "frameskip": "0"
+  },
+  "arbiter": {
+    "min_confidence": 0.5,
+    "max_decision_age_ms": 500,
+    "manual_lock_ms": 5000,
+    // Python cuts as soon as the focus changes: keep the hold short.
+    "default_min_hold_ms": 500
+  },
+  "initial_camera": "cam-left",
+  "cameras": [
+    { "id": "cam-left", "label": "Left", "video_file": "../samples/football_left.mp4" },
+    { "id": "cam-right", "label": "Right", "video_file": "../samples/football_right.mp4" }
+  ]
+}

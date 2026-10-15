@@ -1,0 +1,358 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Castor.Proto.App.ViewModels"
+        xmlns:charts="using:Castor.Proto.App.Charts"
+        xmlns:profiles="using:Castor.Proto.App.Profiles"
+        x:Class="Castor.Proto.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Castor AI - debug console"
+        Width="1680" Height="1000"
+        MinWidth="1100" MinHeight="700">
+
+  <Window.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="#14FFFFFF" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="10" />
+    </Style>
+    <Style Selector="Border.camera">
+      <Setter Property="Background" Value="#1AFFFFFF" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderThickness" Value="3" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Padding" Value="10" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+    <Style Selector="Border.camera.onair">
+      <Setter Property="BorderBrush" Value="#E53935" />
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="Margin" Value="0,0,4,4" />
+      <Setter Property="Background" Value="#1E88E5" />
+    </Style>
+    <Style Selector="Border.badge.onair">
+      <Setter Property="Background" Value="#E53935" />
+    </Style>
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBox.mono">
+      <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.accepted">
+      <Setter Property="Foreground" Value="#81C784" />
+    </Style>
+    <Style Selector="TextBlock.rejected">
+      <Setter Property="Foreground" Value="#E57373" />
+    </Style>
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="4,3" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,4" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="12">
+
+    <!-- Session bar -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,10">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+        <StackPanel Spacing="4" VerticalAlignment="Center">
+          <ComboBox Width="280" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding IsIdle}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="profiles:SessionProfile">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Classes="muted" Width="280" Text="{Binding ProfileDescription}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Margin="12,0" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Classes="muted" Text="Session params (key=value)" />
+          <TextBox Classes="mono" Width="300" Text="{Binding ParamsText}" IsEnabled="{Binding IsIdle}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Content="Start session" Command="{Binding StartCommand}" />
+          <Button Content="Stop" Command="{Binding StopCommand}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
+          <TextBlock>
+            <Run Text="{Binding ProviderState}" FontWeight="Bold" />
+            <Run Text=" — " />
+            <Run Text="{Binding StateDetail}" />
+          </TextBlock>
+          <TextBlock Classes="muted" Text="{Binding WorkerInfo}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="4" VerticalAlignment="Center" HorizontalAlignment="Right">
+          <TextBlock Classes="mono" FontSize="22" Text="{Binding ClockText}" HorizontalAlignment="Right" />
+          <TextBlock Classes="muted" HorizontalAlignment="Right">
+            <Run Text="On air: " />
+            <Run Text="{Binding OnAirLabel}" />
+          </TextBlock>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Cameras -->
+    <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Cameras}" Margin="0,0,-10,10">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <UniformGrid Rows="1" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:CameraViewModel">
+          <Border Classes="camera" Classes.onair="{Binding IsOnAir}">
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Width="12" Height="12" CornerRadius="3" Background="{Binding Color}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="Bold" FontSize="17" />
+                <Border Grid.Column="2" Classes="badge onair" IsVisible="{Binding IsOnAir}" Margin="0">
+                  <TextBlock Text="ON AIR" FontSize="11" FontWeight="Bold" />
+                </Border>
+              </Grid>
+              <TextBlock Classes="muted" Text="{Binding Description}" />
+
+              <!-- Flags raised by the worker -->
+              <ItemsControl ItemsSource="{Binding Flags}" MinHeight="20">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:FlagViewModel">
+                    <Border Classes="badge" ToolTip.Tip="{Binding Description}">
+                      <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="Bold" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <!-- Camera metrics declared by the worker -->
+              <ItemsControl ItemsSource="{Binding Metrics}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:MetricViewModel">
+                    <StackPanel Spacing="1" Margin="0,0,0,4">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="muted" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Text}" />
+                      </Grid>
+                      <ProgressBar Minimum="0" Maximum="1" Value="{Binding Fraction}" Height="5" MinWidth="0" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <StackPanel Spacing="1">
+                <TextBlock Classes="muted" Text="Score in last decision" />
+                <ProgressBar Minimum="0" Maximum="1" Value="{Binding Score}" Height="5" MinWidth="0" Foreground="#FFCA28" />
+              </StackPanel>
+
+              <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasAudio}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                  <Run Text="audio: " />
+                  <Run Text="{Binding AudioFileName}" />
+                </TextBlock>
+                <Button Grid.Column="1" Content="File..." Command="{Binding PickAudioCommand}" Margin="6,0,0,0" />
+                <Button Grid.Column="2" Content="Clear" Command="{Binding ClearAudioCommand}" Margin="6,0,0,0" />
+              </Grid>
+
+              <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding ShowVideo}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                  <Run Text="video: " />
+                  <Run Text="{Binding VideoFileName}" />
+                </TextBlock>
+                <Button Grid.Column="1" Content="File..." Command="{Binding PickVideoCommand}" Margin="6,0,0,0"
+                        ToolTip.Tip="Still image (png, jpg) or any video ffmpeg reads" />
+                <Button Grid.Column="2" Content="Clear" Command="{Binding ClearVideoCommand}" Margin="6,0,0,0" />
+              </Grid>
+
+              <!-- Profile-defined actions -->
+              <ItemsControl ItemsSource="{Binding Actions}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CameraActionViewModel">
+                    <Panel Margin="0,0,6,6">
+                      <ToggleButton Content="{Binding Label}" IsChecked="{Binding IsChecked}" IsVisible="{Binding IsToggle}"
+                                    ToolTip.Tip="{Binding Tooltip}" />
+                      <Button Content="{Binding Label}" Command="{Binding RunCommand}" IsVisible="{Binding IsButton}"
+                              ToolTip.Tip="{Binding Tooltip}" />
+                    </Panel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Button Content="Take on air" Command="{Binding TakeOnAirCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- On-air timeline -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,10">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+          <TextBlock Classes="title" Text="On air timeline (last 60 s)" />
+          <TextBlock Grid.Column="1" Classes="muted"
+                     Text="solid = AI · faded dashed = manual · pale = initial · ▼ filled = suggestion accepted, hollow = rejected" />
+        </Grid>
+        <charts:ShotTimeline Model="{Binding Timeline}" Height="150" />
+      </DockPanel>
+    </Border>
+
+    <!-- Decisions | charts | tabs -->
+    <Grid ColumnDefinitions="5*,10,4*,10,4*">
+
+      <Border Classes="panel">
+        <DockPanel>
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+            <TextBlock Classes="title" Text="SceneDecision received" />
+            <TextBlock Grid.Column="1" Classes="muted" Text="{Binding DecisionSummary}" />
+          </Grid>
+          <TextBlock DockPanel.Dock="Top" Classes="mono muted" Text="{Binding LatencySummary}" Margin="0,0,0,6" />
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="80,100,48,72,72,86" Margin="4,0,0,4">
+            <TextBlock Classes="muted" Text="source pts" />
+            <TextBlock Grid.Column="1" Classes="muted" Text="camera" />
+            <TextBlock Grid.Column="2" Classes="muted" Text="conf." />
+            <TextBlock Grid.Column="3" Classes="muted" Text="latency" />
+            <TextBlock Grid.Column="4" Classes="muted" Text="worker" />
+            <TextBlock Grid.Column="5" Classes="muted" Text="arbiter" />
+          </Grid>
+          <ListBox ItemsSource="{Binding Decisions}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DecisionItem">
+                <StackPanel Spacing="1">
+                  <Grid ColumnDefinitions="80,100,48,72,72,86">
+                    <TextBlock Classes="mono" Text="{Binding Time}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                      <Border Width="10" Height="10" CornerRadius="2" Background="{Binding CameraColor}" VerticalAlignment="Center" />
+                      <TextBlock FontWeight="SemiBold" Text="{Binding Camera}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Confidence}" />
+                    <TextBlock Grid.Column="3" Classes="mono" Text="{Binding Latency}" />
+                    <TextBlock Grid.Column="4" Classes="mono" Text="{Binding Processing}" />
+                    <TextBlock Grid.Column="5" Classes="mono" FontWeight="Bold" Text="{Binding Verdict}"
+                               Classes.accepted="{Binding Accepted}"
+                               Classes.rejected="{Binding !Accepted}" />
+                  </Grid>
+                  <TextBlock Text="{Binding Reason}" TextWrapping="Wrap" FontSize="12" />
+                  <TextBlock Classes="muted" TextWrapping="Wrap">
+                    <Run Text="arbiter: " />
+                    <Run Text="{Binding ArbiterReason}" />
+                  </TextBlock>
+                  <TextBlock Classes="mono muted" Text="{Binding Details}" TextWrapping="Wrap" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Column="2" Classes="panel">
+        <ScrollViewer>
+          <StackPanel Spacing="8">
+            <charts:TimeSeriesChart Model="{Binding LatencyChart}" Height="160" />
+            <ItemsControl ItemsSource="{Binding MetricCharts}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="charts:ChartModel">
+                  <charts:TimeSeriesChart Model="{Binding}" Height="130" Margin="0,0,0,8" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="mono muted" Text="{Binding StatsText}" TextWrapping="Wrap" />
+            <TextBlock Classes="mono" Text="{Binding DetailText}" TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Column="4" Classes="panel" Padding="6">
+        <TabControl>
+          <TabItem Header="Logs">
+            <ListBox ItemsSource="{Binding Logs}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:LogItem">
+                  <TextBlock Classes="mono" TextWrapping="Wrap">
+                    <Run Text="{Binding Time}" />
+                    <Run Text=" [" /><Run Text="{Binding Source}" /><Run Text="] " />
+                    <Run Text="{Binding Text}" />
+                  </TextBlock>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </TabItem>
+
+          <TabItem Header="On air">
+            <ListBox ItemsSource="{Binding OnAirHistory}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:OnAirItem">
+                  <Grid ColumnDefinitions="80,Auto,*,Auto">
+                    <TextBlock Classes="mono" Text="{Binding Time}" />
+                    <Border Grid.Column="1" Width="10" Height="10" CornerRadius="2" Background="{Binding CameraColor}"
+                            VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="{Binding Camera}" />
+                    <TextBlock Grid.Column="3" Classes="muted" Text="{Binding Source}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </TabItem>
+
+          <TabItem Header="Payload">
+            <StackPanel Spacing="8" Margin="4">
+              <TextBlock Classes="muted" TextWrapping="Wrap"
+                         Text="Send any payload the worker declares. camera_id is added when a camera is chosen." />
+              <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Text="type" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PayloadTypes}"
+                          SelectedItem="{Binding SelectedPayloadType}" />
+                <TextBlock Grid.Row="1" Text="camera" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding PayloadTargets}"
+                          SelectedItem="{Binding SelectedPayloadTarget}" />
+              </Grid>
+              <TextBlock Classes="muted" Text="data (JSON object)" />
+              <TextBox Classes="mono" Text="{Binding PayloadJson}" AcceptsReturn="True" Height="140" TextWrapping="Wrap" />
+              <Button Content="Send payload" Command="{Binding SendPayloadCommand}" />
+            </StackPanel>
+          </TabItem>
+
+          <TabItem Header="Capabilities">
+            <ScrollViewer>
+              <SelectableTextBlock Classes="mono" Text="{Binding CapabilitiesText}" TextWrapping="Wrap" Margin="4"
+                                   FontFamily="Consolas, Menlo, monospace" FontSize="12" />
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </Border>
+    </Grid>
+  </DockPanel>
+</Window>

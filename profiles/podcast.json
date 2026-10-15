@@ -1,0 +1,39 @@
+{
+  // Podcast worker on the generated sample dialogue (scripts/generate-sample-dialogue.ps1).
+  "name": "Podcast - 3 mics",
+  "domain": "podcast",
+  "description": "Host + 2 guests, one mic each, explicit roles. Silero VAD on every mic.",
+  "params": {
+    // Not in the Python module: avoids fake debates during pauses (docs/architecture.md, section 7).
+    "level_smoothing_ms": "300"
+  },
+  "arbiter": {
+    "min_confidence": 0.5,
+    "max_decision_age_ms": 500,
+    "manual_lock_ms": 5000,
+    "default_min_hold_ms": 1500
+  },
+  "initial_camera": "cam-wide",
+  "cameras": [
+    { "id": "cam-wide", "label": "Wide", "role": "wide" },
+    { "id": "cam-host", "label": "Host", "role": "host", "audio_channel": 0, "audio_file": "../samples/host.wav" },
+    { "id": "cam-guest1", "label": "Guest 1", "role": "guest", "audio_channel": 1, "audio_file": "../samples/guest.wav" },
+    { "id": "cam-guest2", "label": "Guest 2", "role": "guest2", "audio_channel": 2, "audio_file": "../samples/guest2.wav" }
+  ],
+  "camera_actions": [
+    {
+      "label": "Talking",
+      "tooltip": "Manual is_speaking hint, OR-ed with the mic VAD",
+      "requires_audio": true,
+      "on": { "type": "speaker.start" },
+      "off": { "type": "speaker.stop" }
+    },
+    {
+      "label": "Empty chair",
+      "tooltip": "person_detected=false: the director never cuts to this camera",
+      "requires_audio": true,
+      "on": { "type": "camera.metadata", "data": { "person_detected": false } },
+      "off": { "type": "camera.metadata", "data": { "person_detected": null } }
+    }
+  ]
+}

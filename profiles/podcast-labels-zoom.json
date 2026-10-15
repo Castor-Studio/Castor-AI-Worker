@@ -1,0 +1,27 @@
+{
+  // Same worker, roles guessed from labels (like the Python module) and a zoom camera:
+  // the host gets the zoom after monologue_time seconds of uninterrupted speech.
+  "name": "Podcast - labels + host zoom",
+  "domain": "podcast",
+  "description": "No explicit roles: Cam Hote / Zoom Hote / Cam Invite / Plan Large. Monologue zoom after 4 s.",
+  "params": {
+    "level_smoothing_ms": "300",
+    "monologue_time": "4.0",
+    "min_hold_time": "2.0"
+  },
+  "initial_camera": "cam-3",
+  "cameras": [
+    { "id": "cam-1", "label": "Cam Hote", "audio_channel": 0, "audio_file": "../samples/host.wav" },
+    { "id": "cam-1-zoom", "label": "Zoom Hote" },
+    { "id": "cam-2", "label": "Cam Invite", "audio_channel": 1, "audio_file": "../samples/guest.wav" },
+    { "id": "cam-3", "label": "Plan Large" }
+  ],
+  "camera_actions": [
+    {
+      "label": "Talking",
+      "requires_audio": true,
+      "on": { "type": "speaker.start" },
+      "off": { "type": "speaker.stop" }
+    }
+  ]
+}
