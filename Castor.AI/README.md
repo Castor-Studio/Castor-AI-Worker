@@ -36,14 +36,14 @@ Ils sont levés via `AiClientOptions.Dispatch` s'il est fourni (sinon sur un thr
 ## Paquet NuGet
 
 `Castor.AI` et `Castor.AI.Contracts` sont publiés sur GitHub Packages (`Castor-Studio`) par
-`.github/workflows/nuget.yml` à chaque tag `v*.*.*` (version du paquet = tag sans le `v`) :
+`.github/workflows/nuget-publish.yml` à chaque tag `v*.*.*` (version du paquet = tag sans le `v`) :
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Sur les PR, le workflow teste et emballe seulement (paquets en artifact, version `0.0.0-ci.<run>`).
+Sur les PR vers `main` / `dev`, `.github/workflows/ci.yml` teste et emballe seulement (paquets en artifact, version `0.0.0-ci.<run>`).
 
 Côté Castor Studio, ajouter la source dans `nuget.config` :
 

@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- NuGet package (published by .github/workflows/nuget.yml on v*.*.* tags). -->
+  <!-- NuGet package (published by .github/workflows/nuget-publish.yml on v*.*.* tags). -->
   <PropertyGroup>
     <PackageId>Castor.AI.Contracts</PackageId>
     <Version>0.0.0-dev</Version>
