@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Castor.AI;
 
-namespace Castor.Proto.App.Profiles;
+namespace Castor.AI.Dashboard.Profiles;
 
 /// <summary>
 /// Everything domain-specific the app needs to run a session, so the UI itself stays generic:

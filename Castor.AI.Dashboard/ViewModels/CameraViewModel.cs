@@ -2,11 +2,11 @@ using System.Collections.ObjectModel;
 using Avalonia.Media;
 using Castor.AI;
 using Castor.AI.Contracts.V1;
-using Castor.Proto.App.Profiles;
+using Castor.AI.Dashboard.Profiles;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace Castor.Proto.App.ViewModels;
+namespace Castor.AI.Dashboard.ViewModels;
 
 /// <summary>What a camera card can ask the main view model to do.</summary>
 public interface ICameraActions

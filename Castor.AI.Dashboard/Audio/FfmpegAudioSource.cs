@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Castor.AI;
 
-namespace Castor.Proto.App.Audio;
+namespace Castor.AI.Dashboard.Audio;
 
 /// <summary>
 /// Test microphone: decodes the audio track of any file ffmpeg understands (wav, mp3, mp4, mkv...)

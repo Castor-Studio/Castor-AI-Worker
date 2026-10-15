@@ -1,10 +1,10 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using Castor.Proto.App.ViewModels;
-using Castor.Proto.App.Views;
+using Castor.AI.Dashboard.ViewModels;
+using Castor.AI.Dashboard.Views;
 
-namespace Castor.Proto.App;
+namespace Castor.AI.Dashboard;
 
 public sealed class App : Application
 {

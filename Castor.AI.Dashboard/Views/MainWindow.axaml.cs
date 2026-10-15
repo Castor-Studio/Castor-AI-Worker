@@ -1,8 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
-using Castor.Proto.App.ViewModels;
+using Castor.AI.Dashboard.ViewModels;
 
-namespace Castor.Proto.App.Views;
+namespace Castor.AI.Dashboard.Views;
 
 public sealed partial class MainWindow : Window
 {

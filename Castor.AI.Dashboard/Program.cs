@@ -1,6 +1,6 @@
 using Avalonia;
 
-namespace Castor.Proto.App;
+namespace Castor.AI.Dashboard;
 
 internal static class Program
 {

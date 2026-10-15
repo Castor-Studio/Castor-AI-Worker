@@ -13,7 +13,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Castor.AI.Tests", "Castor.A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Castor.AI.Worker.Tests", "Castor.AI.Worker.Tests\Castor.AI.Worker.Tests.csproj", "{EDF5F7AE-B681-483A-8C4A-85FD3F61E99C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Castor.Proto.App", "Castor.Proto.App\Castor.Proto.App.csproj", "{A1BCCDFE-1C13-4003-94DD-EB93C08C4790}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Castor.AI.Dashboard", "Castor.AI.Dashboard\Castor.AI.Dashboard.csproj", "{A1BCCDFE-1C13-4003-94DD-EB93C08C4790}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

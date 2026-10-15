@@ -1,6 +1,6 @@
 using Avalonia.Media;
 
-namespace Castor.Proto.App.Charts;
+namespace Castor.AI.Dashboard.Charts;
 
 /// <summary>Shared colors: one per camera index, reused by cards, charts and the timeline.</summary>
 public static class Palette
