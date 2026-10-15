@@ -261,7 +261,7 @@ Points ouverts pour le cloud :
 
 ## 6. Structure du repo
 
-Repo `Castor.AI.Worker` (GitHub `Castor-Studio/Castor.AI.Worker`), séparé de Castor Studio. Studio n'en consomme
+Repo `Castor-AI-Worker` (GitHub `Castor-Studio/Castor-AI-Worker`), séparé de Castor Studio. Studio n'en consomme
 que le SDK (`Castor.AI` + `Castor.AI.Contracts`) et le binaire du worker.
 
 ```
@@ -439,7 +439,7 @@ puis à droite, 3 s chacun, en boucle ; ffmpeg requis). Sans ffmpeg, choisir `sa
 
 Studio et le worker vivent dans deux repos. Studio ne livre que le worker ; le worker se charge de ses modèles.
 
-Au démarrage, pour chaque modèle de son domaine (`ModelCatalog`, `Castor.AI.Worker/Models/ModelProvisioner.cs`),
+Au démarrage, pour chaque modèle de son domaine (`Castor.AI.Worker/Models/models.json`, lu par `ModelCatalog`),
 le worker prend le premier disponible :
 
 1. un pack installé : `CASTOR_PACKS_DIR`, `packs/` à côté du worker, ou le `packs/` le plus proche au-dessus (dev) ;
@@ -447,7 +447,7 @@ le worker prend le premier disponible :
 3. sinon il le télécharge dans le cache : `CASTOR_MODELS_URL` + `/<fichier>` si la variable existe (miroir,
    autre release), sinon l'URL du catalogue.
 
-Chaque téléchargement est vérifié par SHA-256 (épinglé dans `ModelCatalog`) dans un fichier temporaire, puis
+Chaque téléchargement est vérifié par SHA-256 (épinglé dans `models.json`) dans un fichier temporaire, puis
 renommé : un fichier partiel ou corrompu n'est jamais chargé. Pendant ce temps `Health` reste `STARTING` et
 `detail` porte la progression ; le SDK la remonte dans `StateChanged` et repousse son timeout à chaque progrès.
 Un échec (HTTP, checksum, pas de source) arrête le worker avec le code 3 et un message explicite.
@@ -456,8 +456,8 @@ Les tests passent par le même mécanisme (`TestModels`) : aucun script à lance
 
 ### Hébergement : releases de ce repo
 
-Les modèles sont des assets de la release `models-v1` de `Castor-Studio/Castor.AI.Worker`
-(`https://github.com/Castor-Studio/Castor.AI.Worker/releases/download/models-v1/<fichier>`). Le repo doit être
+Les modèles sont des assets de la release `models-v1` de `Castor-Studio/Castor-AI-Worker`
+(`https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1/<fichier>`). Le repo doit être
 **public** : le worker installé chez l'utilisateur télécharge sans jeton. Les noms de fichiers sont uniques
 entre domaines, tous les modèles d'une version étant côte à côte dans une même release.
 
@@ -466,8 +466,14 @@ entre domaines, tous les modèles d'une version étant côte à côte dans une m
 | Silero VAD v6.2.1 (MIT) | `silero_vad.onnx` (2 Mo) | copie du fichier publié par le projet Silero |
 | Ballon (YOLOv9c COCO) | `checkpoint_5_416.onnx` (100 Mo) | `scripts/export-football-model.ps1` |
 
-**Publier** : `scripts/publish-models.ps1` (`-DryRun` pour voir sans publier) lit le tag et les SHA-256 de
-`ModelCatalog`, vérifie chaque fichier local contre son hash, puis crée la release ou y ajoute les fichiers
-manquants (`gh`). Un asset publié ne change jamais : un nouveau modèle = nouveau nom de fichier, nouveau
-SHA-256 dans `ModelCatalog`, et nouvelle release (`models-v2`) si besoin. L'export ONNX n'est pas
-reproductible octet par octet : publier exactement le fichier dont le SHA-256 est épinglé, ou ré-épingler.
+**Configuration** : tout est dans `Castor.AI.Worker/Models/models.json`, embarqué dans le worker :
+`repository` et `release_tag` donnent l'URL de la release, chaque entrée donne `domain`, `file`, `sha256`,
+et au besoin `url` (autre source pour ce modèle) ou `upstream` (où le script de publication récupère un
+modèle que ce repo ne produit pas). Changer un lien = éditer ce fichier, pas le code.
+`CASTOR_MODELS_MANIFEST=<chemin d'un models.json>` le remplace à l'exécution, sans rebuild.
+
+**Publier** : `scripts/publish-models.ps1` (`-DryRun` pour voir sans publier) lit `models.json`, vérifie
+chaque fichier local contre son hash, puis crée la release ou y ajoute les fichiers manquants (`gh`).
+Un asset publié ne change jamais : un nouveau modèle = nouveau nom de fichier, nouveau SHA-256 dans
+`models.json`, et nouvelle release (`models-v2`) si besoin. L'export ONNX n'est pas reproductible octet par
+octet : publier exactement le fichier dont le SHA-256 est épinglé, ou ré-épingler.

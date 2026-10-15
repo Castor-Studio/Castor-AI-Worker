@@ -16,4 +16,9 @@
     <ProjectReference Include="..\Castor.AI.Contracts\Castor.AI.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Where the models are hosted and their SHA-256 (ModelCatalog). -->
+    <EmbeddedResource Include="Models\models.json" LogicalName="Castor.AI.Worker.Models.models.json" />
+  </ItemGroup>
+
 </Project>

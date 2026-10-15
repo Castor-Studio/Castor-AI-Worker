@@ -109,3 +109,44 @@ public sealed class ModelProvisionerTests : IDisposable
         }
     }
 }
+
+public class ModelCatalogTests
+{
+    private const string Sha = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3";
+
+    [Fact]
+    public void Embedded_manifest_points_to_the_worker_repository_release()
+    {
+        Assert.Equal("https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1", ModelCatalog.ReleaseUrl);
+        Assert.Equal($"{ModelCatalog.ReleaseUrl}/checkpoint_5_416.onnx", ModelCatalog.FootballBall.Url);
+        Assert.Equal("podcast", ModelCatalog.SileroVad.Domain);
+    }
+
+    [Fact]
+    public void Url_of_an_entry_overrides_the_release_asset()
+    {
+        var manifest = ModelCatalog.Parse($$"""
+            {
+              // comments are allowed
+              "repository": "owner/repo",
+              "release_tag": "models-v2",
+              "models": [
+                { "domain": "a", "file": "a.onnx", "sha256": "{{Sha}}" },
+                { "domain": "b", "file": "b.onnx", "sha256": "{{Sha.ToUpperInvariant()}}", "url": "https://mirror.test/b.onnx" },
+              ]
+            }
+            """);
+
+        Assert.Equal("https://github.com/owner/repo/releases/download/models-v2", manifest.ReleaseUrl);
+        Assert.Equal("https://github.com/owner/repo/releases/download/models-v2/a.onnx", manifest.Specs[0].Url);
+        Assert.Equal("https://mirror.test/b.onnx", manifest.Specs[1].Url);
+        Assert.Equal(Sha, manifest.Specs[1].Sha256);
+    }
+
+    [Theory]
+    [InlineData("""{ "repository": "o/r", "models": [] }""")]
+    [InlineData("""{ "repository": "o/r", "release_tag": "t", "models": [ { "domain": "a", "file": "a.onnx", "sha256": "abc" } ] }""")]
+    [InlineData($$"""{ "repository": "o/r", "release_tag": "t", "models": [ { "domain": "a", "file": "x.onnx", "sha256": "{{Sha}}" }, { "domain": "b", "file": "x.onnx", "sha256": "{{Sha}}" } ] }""")]
+    public void Invalid_manifest_is_rejected(string json) =>
+        Assert.Throws<InvalidDataException>(() => ModelCatalog.Parse(json));
+}

@@ -3,46 +3,6 @@ using System.Security.Cryptography;
 namespace Castor.AI.Worker.Models;
 
 /// <summary>
-/// A model file the worker needs, pinned by SHA-256. <see cref="Url"/> is where to get it when it is not
-/// installed; null = only through <c>CASTOR_MODELS_URL</c>. File names are unique across domains: hosted
-/// models sit side by side in one release.
-/// </summary>
-public sealed record ModelSpec(string Domain, string FileName, string Sha256, string? Url)
-{
-    public string Key => $"{Domain}/{FileName}";
-}
-
-/// <summary>
-/// Every model of every domain, hosted as assets of the <see cref="ReleaseTag"/> release of this repository
-/// (scripts/publish-models.ps1). Assets of a release never change: a new model = new file name and SHA-256,
-/// published in a new release tag.
-/// </summary>
-public static class ModelCatalog
-{
-    public const string ReleaseTag = "models-v1";
-
-    public const string ReleaseUrl = $"https://github.com/Castor-Studio/Castor.AI.Worker/releases/download/{ReleaseTag}";
-
-    /// <summary>Silero VAD v6.2.1 (MIT), same version as Castor-AI (silero-vad==6.2.1).</summary>
-    public static readonly ModelSpec SileroVad = new(
-        "podcast",
-        "silero_vad.onnx",
-        "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
-        $"{ReleaseUrl}/silero_vad.onnx");
-
-    /// <summary>
-    /// Castor-AI <c>checkpoint_5.pt</c> exported by scripts/export-football-model.ps1. The export is not
-    /// byte-reproducible: publish exactly the file this hash was taken from.
-    /// </summary>
-    public static readonly ModelSpec FootballBall = new(
-        "football",
-        "checkpoint_5_416.onnx",
-        "c25e2369251fc35633326c7b17c5bd0e591f1e261dddd0912d5ecead9614e2dc",
-        $"{ReleaseUrl}/checkpoint_5_416.onnx");
-
-    public static IReadOnlyList<ModelSpec> All { get; } = [SileroVad, FootballBall];
-}
-
 /// Makes a model available locally: an installed pack (<see cref="PackLocator"/>), else the download cache,
 /// else downloads it into the cache. Downloads are checked against <see cref="ModelSpec.Sha256"/> before use
 /// and land atomically, so a broken or partial file is never loaded.
