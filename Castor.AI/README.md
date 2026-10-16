@@ -33,6 +33,39 @@ Méthodes de `AiClient` :
 `SessionStarted`, `StatsReceived` (métriques décrites par `Capabilities.Metrics`), `LogReceived`.
 Ils sont levés via `AiClientOptions.Dispatch` s'il est fourni (sinon sur un thread du SDK).
 
+## Paquet NuGet
+
+`Castor.AI` et `Castor.AI.Contracts` sont publiés sur GitHub Packages (`Castor-Studio`) par
+`.github/workflows/nuget-publish.yml` à chaque tag `v*.*.*` (version du paquet = tag sans le `v`) :
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Sur les PR vers `main` / `dev`, `.github/workflows/ci.yml` teste et emballe seulement (paquets en artifact, version `0.0.0-ci.<run>`).
+
+Côté Castor Studio, ajouter la source dans `nuget.config` :
+
+```xml
+<packageSources>
+  <add key="castor-github" value="https://nuget.pkg.github.com/Castor-Studio/index.json" />
+</packageSources>
+<packageSourceCredentials>
+  <castor-github>
+    <add key="Username" value="%GITHUB_ACTOR%" />
+    <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
+  </castor-github>
+</packageSourceCredentials>
+```
+
+`GITHUB_TOKEN` : en local un PAT avec `read:packages`, en CI le `GITHUB_TOKEN` du workflow
+(`permissions: packages: read`). Puis référencer seulement `Castor.AI` (`Castor.AI.Contracts` suit en dépendance) :
+
+```xml
+<PackageReference Include="Castor.AI" Version="1.0.0" />
+```
+
 ## Intégration dans Castor Studio
 
 ### 1. Enregistrement (`ServiceCollectionExtensions.AddCommonServices`)

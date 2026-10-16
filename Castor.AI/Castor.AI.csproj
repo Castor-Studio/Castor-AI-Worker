@@ -9,6 +9,16 @@
     <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
+  <!-- NuGet package (published by .github/workflows/nuget-publish.yml on v*.*.* tags). -->
+  <PropertyGroup>
+    <PackageId>Castor.AI</PackageId>
+    <Version>0.0.0-dev</Version>
+    <Authors>Castor Studio</Authors>
+    <Description>Client SDK for Castor Studio: sessions with AI workers, audio feed, shot arbitration.</Description>
+    <RepositoryUrl>https://github.com/Castor-Studio/Castor-AI-Worker</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" Version="2.67.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
