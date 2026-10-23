@@ -2,44 +2,44 @@
 _layout: landing
 ---
 
-# Documentation Castor AI
+# Castor AI documentation
 
-Castor AI est l'IA de réalisation de Castor Studio : un process **worker** choisit en direct la caméra à
-mettre à l'antenne, à partir de la vidéo des caméras, de l'audio des micros et des indications envoyées par
-l'app. L'app Avalonia (Castor Studio, ou la console de debug `Castor.AI.Dashboard`) ne parle au worker qu'à
-travers le SDK `Castor.AI`. Ce site est construit en local depuis le repo ; rien n'est hébergé.
+Castor AI is the directing AI of Castor Studio: a **worker** process picks, live, the camera to put on air,
+from the camera video, the microphone audio and the hints sent by the app. The Avalonia app (Castor Studio,
+or the `Castor.AI.Dashboard` debug console) only talks to the worker through the `Castor.AI` SDK. This site
+is built locally from the repository; nothing is hosted.
 
-- [Fonctionnement du worker](guides/worker.md) : lancement, démarrage et modèles, service gRPC, déroulé d'une
-  session, stratégies par domaine, pannes.
-- [Communiquer depuis l'app Avalonia](guides/avalonia.md) : enregistrer `AiClient`, ouvrir une session,
-  pousser audio, vidéo et payloads, réagir aux suggestions sur le thread UI, cycle de vie et déploiement.
-- [Architecture et formats](architecture.md) : vue d'ensemble local / cloud, diagramme de séquence, temps
-  réel, format de la mémoire partagée, workers Podcast et Football, hébergement des modèles.
-- [API reference](api/Castor.AI.yml) : l'API C# publique du SDK (`Castor.AI`) et du contrat
-  (`Castor.AI.Contracts`), générée depuis les commentaires XML.
+- [How the worker works](guides/worker.md): launch, startup and models, gRPC service, session flow,
+  per-domain strategies, failures.
+- [Talking to the worker from the Avalonia app](guides/avalonia.md): registering `AiClient`, opening a
+  session, pushing audio, video and payloads, handling suggestions on the UI thread, lifecycle and deployment.
+- [Architecture and formats](architecture.md) (French): local / cloud overview, sequence diagram, real time,
+  shared memory layout, Podcast and Football workers, model hosting.
+- [API reference](api/Castor.AI.yml): the public C# API of the SDK (`Castor.AI`) and of the contract
+  (`Castor.AI.Contracts`), generated from the XML doc comments.
 
-La présentation du repo et l'intégration pas à pas dans Castor Studio sont aussi dans le
-[README](https://github.com/Castor-Studio/Castor-AI-Worker#readme) et le
-[README du SDK](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md).
+The repository overview and the step-by-step Castor Studio integration are also in the
+[README](https://github.com/Castor-Studio/Castor-AI-Worker#readme) and the
+[SDK README](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md).
 
 ```
-App Avalonia (Castor Studio, Castor.AI.Dashboard)
-  └ AiClient (SDK Castor.AI)            session, horloge, arbitre, flux audio et vidéo
-      └ LocalWorkerProvider             lance et supervise le worker
-          ├ gRPC sur named pipe         contrôle, payloads, suggestions, stats, logs
-          └ mémoire partagée            frames vidéo (1 région par caméra) + ring audio
-              └ Castor.AI.Worker.exe    un domaine par process : podcast, football
+Avalonia app (Castor Studio, Castor.AI.Dashboard)
+  └ AiClient (Castor.AI SDK)            session, clock, arbiter, audio and video feeds
+      └ LocalWorkerProvider             starts and supervises the worker
+          ├ gRPC over a named pipe      control, payloads, suggestions, stats, logs
+          └ shared memory               video frames (1 region per camera) + audio ring
+              └ Castor.AI.Worker.exe    one domain per process: podcast, football
 ```
 
-## Construire ce site
+## Building this site
 
-Prérequis : SDK .NET 10 et PowerShell 7. Depuis la racine du repo :
+Requirements: .NET 10 SDK and PowerShell 7. From the repository root:
 
 ```powershell
 pwsh eng/Build-Docs.ps1 -Serve
 ```
 
-Le site est servi sur `http://localhost:8080`. Sans `-Serve`, il est seulement écrit dans `docs/_site/`.
-DocFX compile `Castor.AI` et `Castor.AI.Contracts` pour générer l'API reference.
+The site is served on `http://localhost:8080`. Without `-Serve`, it is only written to `docs/_site/`.
+DocFX compiles `Castor.AI` and `Castor.AI.Contracts` to generate the API reference.
 
-Les dossiers générés (`docs/api/`, `docs/_site/`) ne sont pas commités.
+Generated folders (`docs/api/`, `docs/_site/`) are not committed.

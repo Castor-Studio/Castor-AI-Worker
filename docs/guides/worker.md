@@ -1,179 +1,178 @@
-# Fonctionnement du worker
+# How the worker works
 
-`Castor.AI.Worker` est un process console .NET 10 (ASP.NET Core + ONNX Runtime). Un process sert **un seul
-domaine** (`podcast`, `football`), choisi au lancement. Il expose le service gRPC `AiWorker` sur un named pipe,
-lit les médias en mémoire partagée et renvoie des suggestions de plan (`SceneDecision`).
+`Castor.AI.Worker` is a .NET 10 console process (ASP.NET Core + ONNX Runtime). One process serves **a single
+domain** (`podcast`, `football`), chosen at launch. It exposes the `AiWorker` gRPC service on a named pipe,
+reads media from shared memory and sends back shot suggestions (`SceneDecision`).
 
-Le worker ne décide jamais seul de ce qui passe à l'antenne : il **suggère**. L'app reste l'autorité finale
-(arbitre du SDK ou opérateur) et lui renvoie ce qui est réellement à l'antenne (`CameraOnAir`).
+The worker never decides on its own what goes on air: it **suggests**. The app stays the final authority
+(SDK arbiter or operator) and tells it what is really on air (`CameraOnAir`).
 
-L'app ne lance pas le worker elle-même : `LocalWorkerProvider` (SDK `Castor.AI`) s'en charge. Voir
-[Communiquer depuis l'app Avalonia](avalonia.md).
+The app does not start the worker itself: `LocalWorkerProvider` (`Castor.AI` SDK) does. See
+[Talking to the worker from the Avalonia app](avalonia.md).
 
-## Lancement
+## Launch
 
 ```
-Castor.AI.Worker.exe --domain podcast|football --pipe <nom> [--parent-pid <pid>]
+Castor.AI.Worker.exe --domain podcast|football --pipe <name> [--parent-pid <pid>]
 ```
 
-| Argument | Défaut | Rôle |
+| Argument | Default | Role |
 |---|---|---|
-| `--domain` | `podcast` | Domaine servi par ce process. Inconnu : sortie immédiate avec le code 2. |
-| `--pipe` | `castor-ai-worker` | Nom du named pipe d'écoute. Le SDK en tire un unique par session : `castor-ai-<guid>`. |
-| `--parent-pid` | aucun | PID de l'app. Le worker s'arrête quand ce process disparaît (`ParentWatchdog`). |
+| `--domain` | `podcast` | Domain served by this process. Unknown: immediate exit with code 2. |
+| `--pipe` | `castor-ai-worker` | Name of the named pipe to listen on. The SDK picks a unique one per session: `castor-ai-<guid>`. |
+| `--parent-pid` | none | PID of the app. The worker stops when that process goes away (`ParentWatchdog`). |
 
-Codes de sortie :
+Exit codes:
 
 | Code | Cause |
 |---|---|
-| 0 | Arrêt normal (parent disparu, arrêt demandé). |
-| 2 | Domaine inconnu. Vérifié avant de toucher aux modèles ou au pipe (sert de smoke test dans `worker-release.yml`). |
-| 3 | Modèle introuvable, téléchargement ou checksum en échec (`Warmup.ModelLoadFailedExitCode`). |
+| 0 | Normal shutdown (parent gone, stop requested). |
+| 2 | Unknown domain. Checked before touching the models or the pipe (used as the smoke test in `worker-release.yml`). |
+| 3 | Model not found, download or checksum failed (`Warmup.ModelLoadFailedExitCode`). |
 
-Variables d'environnement lues par le worker (détail dans [Architecture, section 9](../architecture.md#9-modèles--installation-et-téléchargement)) :
+Environment variables read by the worker (details in [Architecture, section 9](../architecture.md#9-modèles--installation-et-téléchargement)):
 
-| Variable | Rôle |
+| Variable | Role |
 |---|---|
-| `CASTOR_PACKS_DIR` | Dossier de packs de modèles installés. |
-| `CASTOR_MODELS_DIR` | Cache des modèles téléchargés (défaut `%LOCALAPPDATA%\Castor\models`). |
-| `CASTOR_MODELS_URL` | Miroir de téléchargement : `<url>/<fichier>`. |
-| `CASTOR_MODELS_MANIFEST` | Remplace le `models.json` embarqué, sans rebuild. |
+| `CASTOR_PACKS_DIR` | Folder of installed model packs. |
+| `CASTOR_MODELS_DIR` | Cache of downloaded models (default `%LOCALAPPDATA%\Castor\models`). |
+| `CASTOR_MODELS_URL` | Download mirror: `<url>/<file>`. |
+| `CASTOR_MODELS_MANIFEST` | Replaces the embedded `models.json`, without a rebuild. |
 
-`stdout` et `stderr` du worker sont relus par le SDK et remontés dans `AiClient.LogReceived`
-(`[worker stdout] ...`). Les logs ASP.NET Core sont filtrés au niveau `Warning`.
+The worker's `stdout` and `stderr` are read by the SDK and surfaced in `AiClient.LogReceived`
+(`[worker stdout] ...`). ASP.NET Core logs are filtered at the `Warning` level.
 
-Lancer un worker à la main, pour le déboguer sans app :
+Start a worker by hand, to debug it without an app:
 
 ```powershell
 dotnet run --project Castor.AI.Worker -- --domain football --pipe castor-debug
 ```
 
-## Démarrage
+## Startup
 
 ```
 Program.cs
   ├ WorkerOptions.Parse(args)           --domain, --pipe, --parent-pid
-  ├ Kestrel ListenNamedPipe(HTTP/2)     service gRPC AiWorker
-  ├ Warmup (BackgroundService)          modèles du domaine, puis Health = READY
-  └ ParentWatchdog (BackgroundService)  arrêt si l'app meurt
+  ├ Kestrel ListenNamedPipe(HTTP/2)     AiWorker gRPC service
+  ├ Warmup (BackgroundService)          domain models, then Health = READY
+  └ ParentWatchdog (BackgroundService)  shutdown when the app dies
 ```
 
-1. Kestrel écoute tout de suite sur le pipe : `Health` répond pendant le chargement.
-2. `Warmup` prend chaque modèle de `StrategyCatalog.RequiredModels` : pack installé, sinon cache, sinon
-   téléchargement vérifié par SHA-256 (`ModelProvisioner`). La progression va dans `Health.detail`
-   (« downloading football/checkpoint_5_416.onnx 42 % »), puis les modèles sont chargés dans ONNX Runtime
+1. Kestrel listens on the pipe right away: `Health` answers while models load.
+2. `Warmup` takes each model of `StrategyCatalog.RequiredModels`: installed pack, else cache, else a download
+   checked against its SHA-256 (`ModelProvisioner`). Progress goes to `Health.detail`
+   ("downloading football/checkpoint_5_416.onnx 42 %"), then the models are loaded into ONNX Runtime
    (`ModelStore`).
-3. `WorkerState.Status` passe de `STATUS_STARTING` à `STATUS_READY`. Avant ça, toute session est refusée
-   (`CODE_INTERNAL`, « Worker not ready »).
+3. `WorkerState.Status` goes from `STATUS_STARTING` to `STATUS_READY`. Before that, every session is refused
+   (`CODE_INTERNAL`, "Worker not ready").
 
-Les modèles sont chargés **une fois par process** et partagés entre sessions ; chaque session crée sa
-propre stratégie (états VAD, focus...).
+Models are loaded **once per process** and shared between sessions; each session creates its own strategy
+(VAD states, focus...).
 
-## Service gRPC
+## gRPC service
 
-Contrat : `Castor.AI.Contracts/Protos/castor_ai.proto` (package `castor.ai.v1`), implémenté par
+Contract: `Castor.AI.Contracts/Protos/castor_ai.proto` (package `castor.ai.v1`), implemented by
 `AiWorkerService`.
 
-| RPC | Réponse |
+| RPC | Response |
 |---|---|
-| `Health` | `status` (`STARTING`, `READY`), `active_sessions`, `detail` (progression du démarrage). Appelé en boucle par le SDK jusqu'à `READY`. |
-| `GetCapabilities` | `WorkerCapabilities` du domaine : entrées requises, `max_cameras`, `preferred_video`, `preferred_audio`, `payload_types`, métriques et flags publiés dans les stats. |
-| `Session` | Stream bidirectionnel, un par session. Premier message client obligatoire : `SessionStart`. |
+| `Health` | `status` (`STARTING`, `READY`), `active_sessions`, `detail` (startup progress). Polled by the SDK until `READY`. |
+| `GetCapabilities` | `WorkerCapabilities` of the domain: required inputs, `max_cameras`, `preferred_video`, `preferred_audio`, `payload_types`, metrics and flags published in the stats. |
+| `Session` | Bidirectional stream, one per session. The first client message must be `SessionStart`. |
 
-Validation de `SessionStart`. Chaque refus est un `SessionError` avec `fatal = true`, puis le stream se ferme :
+`SessionStart` validation. Each refusal is a `SessionError` with `fatal = true`, then the stream closes:
 
 | Condition | Code |
 |---|---|
-| Premier message autre que `start` | `CODE_BAD_FORMAT` |
-| Worker pas encore `READY` | `CODE_INTERNAL` |
-| `domain` différent de celui du process | `CODE_UNSUPPORTED_DOMAIN` |
-| Aucune caméra | `CODE_BAD_FORMAT` |
-| Plus de caméras que `max_cameras` | `CODE_TOO_MANY_CAMERAS` |
-| Régions de mémoire partagée impossibles à ouvrir | `CODE_TRANSPORT_FAILED` |
-| La stratégie rejette la session (paramètre invalide, format vidéo...) | `CODE_BAD_FORMAT` |
+| First message other than `start` | `CODE_BAD_FORMAT` |
+| Worker not `READY` yet | `CODE_INTERNAL` |
+| `domain` differs from the process domain | `CODE_UNSUPPORTED_DOMAIN` |
+| No camera | `CODE_BAD_FORMAT` |
+| More cameras than `max_cameras` | `CODE_TOO_MANY_CAMERAS` |
+| Shared memory regions cannot be opened | `CODE_TRANSPORT_FAILED` |
+| The strategy rejects the session (invalid parameter, video format...) | `CODE_BAD_FORMAT` |
 
-Sinon le worker répond `SessionAccepted` (avec ses capabilities) et un `WorkerLog` de démarrage.
+Otherwise the worker answers `SessionAccepted` (with its capabilities) and a startup `WorkerLog`.
 
-## Déroulé d'une session
+## Session flow
 
-`SessionRunner` fait tourner la session sur trois boucles découplées, pour qu'un modèle lent ne bloque jamais
-la réception :
+`SessionRunner` runs the session on decoupled loops, so a slow model never blocks reception:
 
 ```
-stream app ──► boucle de lecture ──► stratégie (OnPayload, OnAir) ──► réveil
-                                                                        │
-            boucle d'inférence ◄── réveil (capacité 1, latest-wins) ou tick 100 ms
+app stream ──► read loop ──► strategy (OnPayload, OnAir) ──► wake-up
+                                                               │
+            inference loop ◄── wake-up (capacity 1, latest-wins) or 100 ms tick
                  │ strategy.Evaluate(now) ─► SceneDecision ?
                  ▼
-            outbox ◄── boucle de stats (toutes les 250 ms) : WorkerStats
+            outbox ◄── stats loop (every 250 ms): WorkerStats
                  │
-            boucle d'écriture : seule à écrire sur le stream (écritures gRPC non concurrentes)
+            write loop: only writer of the stream (gRPC writes are not concurrent-safe)
 ```
 
-| Message reçu (`ClientMessage`) | Effet côté worker |
+| Received message (`ClientMessage`) | Effect in the worker |
 |---|---|
-| `payload` (`PayloadEvent`) | `strategy.OnPayload`, puis réveil de l'inférence. |
-| `on_air` (`CameraOnAir`) | `strategy.OnAir` : le plan réellement à l'antenne (IA ou manuel). |
-| `video_frame` (`VideoFrameReady`) | Réveil : la stratégie lit la **dernière** frame de la région (latest-wins). |
-| `audio` (`AudioReady`) | Réveil : la VAD consomme le ring audio sans attendre le tick. |
-| `stop` (`SessionStop`) | Fin de la boucle de lecture, `SessionEnded` avec la raison. |
-| `start` en double | Ignoré, `WorkerLog` d'avertissement. |
+| `payload` (`PayloadEvent`) | `strategy.OnPayload`, then wakes inference. |
+| `on_air` (`CameraOnAir`) | `strategy.OnAir`: the shot really on air (AI or manual). |
+| `video_frame` (`VideoFrameReady`) | Wake-up: the strategy reads the **latest** frame of the region (latest-wins). |
+| `audio` (`AudioReady`) | Wake-up: the VAD consumes the audio ring without waiting for the tick. |
+| `stop` (`SessionStop`) | Ends the read loop, `SessionEnded` with the reason. |
+| duplicate `start` | Ignored, warning `WorkerLog`. |
 
-| Message envoyé (`WorkerMessage`) | Quand |
+| Sent message (`WorkerMessage`) | When |
 |---|---|
-| `accepted` | Une fois, après validation et `strategy.Start`. |
-| `decision` (`SceneDecision`) | Quand `Evaluate` a une nouvelle suggestion ; `processing_ms` = temps de calcul. |
-| `stats` (`WorkerStats`) | Toutes les 250 ms : `inference_ms_avg`, puis métriques et flags remplis par la stratégie. |
-| `log` (`WorkerLog`) | Démarrage de session, avertissements. |
-| `error` (`SessionError`) | Refus de la session (voir plus haut). |
-| `ended` (`SessionEnded`) | Toujours, en fin de session : arrêt demandé, stream fermé ou app déconnectée. |
+| `accepted` | Once, after validation and `strategy.Start`. |
+| `decision` (`SceneDecision`) | When `Evaluate` has a new suggestion; `processing_ms` = compute time. |
+| `stats` (`WorkerStats`) | Every 250 ms: `inference_ms_avg`, then metrics and flags filled by the strategy. |
+| `log` (`WorkerLog`) | Session start, warnings. |
+| `error` (`SessionError`) | Session refused (see above). |
+| `ended` (`SessionEnded`) | Always, at the end of the session: stop requested, stream closed or app disconnected. |
 
-**Horloge.** Le worker n'a pas d'horloge propre : son `SessionClock` suit le plus grand `pts_us` reçu de
-l'app (microsecondes depuis `SessionStart`). Toute décision porte `source_pts_us`, le pts de l'entrée la plus
-récente utilisée : l'app en déduit la latence et jette les décisions périmées.
+**Clock.** The worker has no clock of its own: its `SessionClock` follows the highest `pts_us` received from
+the app (microseconds since `SessionStart`). Every decision carries `source_pts_us`, the pts of the newest
+input used: the app derives the latency from it and drops stale decisions.
 
-**Latest-wins.** Plusieurs entrées entre deux évaluations ne donnent qu'un réveil ; la stratégie lit toujours
-la frame la plus récente. Aucune file d'attente, le retard ne s'accumule jamais. Le format des régions et
-l'algorithme de lecture sont décrits dans [Architecture, section 4](../architecture.md#4-format-shared-memory).
+**Latest-wins.** Several inputs between two evaluations give a single wake-up; the strategy always reads the
+newest frame. No queue, so delay never builds up. The region layout and the read algorithm are described in
+[Architecture, section 4](../architecture.md#4-format-shared-memory).
 
-**Décision refusée.** Une suggestion non suivie (l'app renvoie un autre `CameraOnAir`) est reproposée après
-1 s ; le worker raisonne toujours sur le plan que l'app a réellement pris.
+**Refused decision.** A suggestion that is not followed (the app sends another `CameraOnAir`) is suggested
+again after 1 s; the worker always reasons about the shot the app really took.
 
-## Stratégies par domaine
+## Per-domain strategies
 
-La logique métier d'un domaine implémente `IDomainStrategy`. `SessionRunner` l'appelle sous un verrou,
-jamais en parallèle :
+The business logic of a domain implements `IDomainStrategy`. `SessionRunner` calls it under a lock, never
+concurrently:
 
-| Méthode | Rôle |
+| Method | Role |
 |---|---|
-| `Start(SessionStart, SessionMedia, log)` | Lit caméras, rôles et `params` ; lève une exception pour refuser la session. |
-| `OnPayload(PayloadEvent)` | Indications de l'app (`speaker.start`, `camera.metadata`...). |
-| `OnAir(CameraOnAir)` | Plan réellement à l'antenne. |
-| `Evaluate(nowUs)` | Consomme les médias en attente, renvoie une `SceneDecision` ou `null`. |
-| `FillStats(WorkerStats)` | Métriques et flags déclarés dans les capabilities. |
+| `Start(SessionStart, SessionMedia, log)` | Reads cameras, roles and `params`; throws to refuse the session. |
+| `OnPayload(PayloadEvent)` | Hints from the app (`speaker.start`, `camera.metadata`...). |
+| `OnAir(CameraOnAir)` | Shot really on air. |
+| `Evaluate(nowUs)` | Consumes pending media, returns a `SceneDecision` or `null`. |
+| `FillStats(WorkerStats)` | Metrics and flags declared in the capabilities. |
 
-| Domaine | Entrées | Modèle | Détail |
+| Domain | Inputs | Model | Details |
 |---|---|---|---|
-| `podcast` | audio (1 canal par micro), payloads | Silero VAD | [Architecture, section 7](../architecture.md#7-worker-podcast) |
-| `football` | vidéo 640x360 BGRA8 à 15 fps, 4 caméras max | YOLO (ballon) | [Architecture, section 8](../architecture.md#8-worker-football) |
+| `podcast` | audio (1 channel per microphone), payloads | Silero VAD | [Architecture, section 7](../architecture.md#7-worker-podcast) |
+| `football` | video 640x360 BGRA8 at 15 fps, 4 cameras max | YOLO (ball) | [Architecture, section 8](../architecture.md#8-worker-football) |
 
-Ajouter un domaine :
+Adding a domain:
 
-1. une stratégie `Strategies/<Domaine>/` qui implémente `IDomainStrategy`, avec un `Describe(workerId)` qui
-   renvoie ses `WorkerCapabilities` ;
-2. l'enregistrer dans `StrategyCatalog` (`KnownDomains`, `Capabilities`, `RequiredModels`, `LoadModels`,
-   `Create`) ;
-3. ses modèles dans `Models/models.json` (SHA-256 épinglé), publiés par `scripts/publish-models.ps1` ;
-4. un profil `profiles/<domaine>.json` pour le tester dans `Castor.AI.Dashboard`.
+1. a strategy in `Strategies/<Domain>/` implementing `IDomainStrategy`, with a `Describe(workerId)` that
+   returns its `WorkerCapabilities`;
+2. register it in `StrategyCatalog` (`KnownDomains`, `Capabilities`, `RequiredModels`, `LoadModels`,
+   `Create`);
+3. its models in `Models/models.json` (pinned SHA-256), published by `scripts/publish-models.ps1`;
+4. a `profiles/<domain>.json` profile to test it in `Castor.AI.Dashboard`.
 
-L'app n'a rien à changer : elle s'adapte aux capabilities (caméras max, format vidéo et audio, payloads,
-métriques).
+The app has nothing to change: it adapts to the capabilities (max cameras, video and audio format, payloads,
+metrics).
 
-## Pannes
+## Failures
 
-- **App disparue** : `ParentWatchdog` arrête le worker, qui ne garde jamais le GPU ou le pipe en orphelin.
-- **Stream coupé par l'app** : la session se termine proprement, les régions sont démappées ; le process
-  reste prêt pour une autre session.
-- **Crash du worker** : vu par le SDK (process terminé ou stream coupé), qui relance un worker neuf avec backoff
-  (1 s, 2 s, 5 s) et rejoue la session. Voir [Pannes et redémarrages](avalonia.md#cycle-de-vie-et-pannes).
-- **Modèle indisponible** : code de sortie 3 et message explicite dans les logs, remonté par le SDK.
+- **App gone**: `ParentWatchdog` stops the worker, which never keeps the GPU or the pipe as an orphan.
+- **Stream closed by the app**: the session ends cleanly, the regions are unmapped; the process stays ready
+  for another session.
+- **Worker crash**: seen by the SDK (process exited or stream broken), which starts a fresh worker with backoff
+  (1 s, 2 s, 5 s) and replays the session. See [Lifecycle and failures](avalonia.md#lifecycle-and-failures).
+- **Model unavailable**: exit code 3 and an explicit message in the logs, surfaced by the SDK.
