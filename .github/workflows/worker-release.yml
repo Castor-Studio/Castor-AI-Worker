@@ -1,0 +1,63 @@
+name: Worker release
+
+# Publishes the worker executable as an asset of the GitHub release of each v*.*.* tag, for Castor Studio's installer.
+# Same trigger and version as nuget-publish.yml: the worker and the Castor.AI package of a tag share the gRPC contract
+# and the shared-memory layouts, so Studio must ship the worker of its Castor.AI version.
+# Self-contained win-x64 (no .NET runtime needed on the user's machine), models excluded (downloaded at startup).
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "ASSET=Castor.AI.Worker-${GITHUB_REF_NAME#v}-win-x64.zip" >> "$GITHUB_ENV"
+
+      - name: Publish
+        run: dotnet publish Castor.AI.Worker/Castor.AI.Worker.csproj -c Release -r win-x64 --self-contained -p:Version=$VERSION -o out/worker
+
+      # The executable must start without an installed runtime and carry the ONNX Runtime native DLLs.
+      # An unknown domain makes it exit with code 2 before touching models or the pipe.
+      - name: Smoke test
+        run: |
+          test -f out/worker/onnxruntime.dll
+          test -f out/worker/onnxruntime_providers_shared.dll
+          set +e
+          ./out/worker/Castor.AI.Worker.exe --domain smoke-test
+          code=$?
+          set -e
+          test "$code" -eq 2
+
+      - name: Package
+        run: |
+          rm -f out/worker/*.pdb out/worker/*.lib
+          (cd out/worker && 7z a -tzip "../$ASSET" . > /dev/null)
+          # "<sha256>  <file>", readable by sha256sum -c and Get-FileHash.
+          (cd out && echo "$(sha256sum "$ASSET" | cut -d' ' -f1)  $ASSET" > "$ASSET.sha256")
+          cat "out/$ASSET.sha256"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "out/$ASSET" "out/$ASSET.sha256" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "out/$ASSET" "out/$ASSET.sha256" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
