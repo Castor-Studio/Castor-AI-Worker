@@ -1,34 +1,34 @@
 # Castor.AI.Worker
 
-IA de réalisation de Castor Studio : choisit en direct la caméra à mettre à l'antenne, à partir de la vidéo
-des caméras, de l'audio des micros et des indications envoyées par l'app. Castor Studio vit dans son propre
-repo et utilise celui-ci à travers le SDK client et l'exécutable du worker.
+Directing AI of Castor Studio: picks, live, the camera to put on air, from the camera video, the microphone
+audio and the hints sent by the app. Castor Studio lives in its own repository and uses this one through the
+client SDK and the worker executable.
 
-| Projet | Rôle |
+| Project | Role |
 |---|---|
-| `Castor.AI` | SDK client référencé par Castor Studio (`AiClient`) : lance le worker, lui envoie audio et vidéo, remonte les plans suggérés. Voir [Castor.AI/README.md](Castor.AI/README.md). |
-| `Castor.AI.Contracts` | Contrat gRPC (`castor_ai.proto`) et formats de mémoire partagée, communs au SDK et au worker. |
-| `Castor.AI.Worker` | Process worker, un domaine par process : `podcast` (Silero VAD), `football` (détection du ballon, YOLO). |
-| `Castor.AI.Dashboard` | Console de debug Avalonia pour l'équipe IA, pilotée par `profiles/*.json`. |
-| `Castor.AI.Tests`, `Castor.AI.Worker.Tests` | Tests xUnit, dont la parité avec les modules Python de Castor-AI. |
+| `Castor.AI` | Client SDK referenced by Castor Studio (`AiClient`): starts the worker, sends it audio and video, surfaces the suggested shots. See [Castor.AI/README.md](Castor.AI/README.md). |
+| `Castor.AI.Contracts` | gRPC contract (`castor_ai.proto`) and shared memory layouts, common to the SDK and the worker. |
+| `Castor.AI.Worker` | Worker process, one domain per process: `podcast` (Silero VAD), `football` (ball detection, YOLO). |
+| `Castor.AI.Dashboard` | Avalonia debug console for the AI team, driven by `profiles/*.json`. |
+| `Castor.AI.Tests`, `Castor.AI.Worker.Tests` | xUnit tests, including parity with the Castor-AI Python modules. |
 
-Architecture, format de la mémoire partagée, stratégies par domaine et gestion des modèles :
+Architecture, shared memory layout, per-domain strategies and model management:
 [docs/architecture.md](docs/architecture.md).
 
-Fonctionnement du worker et communication avec l'app Avalonia : site DocFX dans `docs/`
-([guides/worker.md](docs/guides/worker.md), [guides/avalonia.md](docs/guides/avalonia.md)) avec l'API
-reference du SDK, construit en local avec `pwsh eng/Build-Docs.ps1 -Serve` (`http://localhost:8080`).
+How the worker works and how the Avalonia app talks to it: DocFX site in `docs/`
+([guides/worker.md](docs/guides/worker.md), [guides/avalonia.md](docs/guides/avalonia.md)) with the SDK API
+reference, built locally with `pwsh eng/Build-Docs.ps1 -Serve` (`http://localhost:8080`).
 
-## Démarrer
+## Getting started
 
-SDK .NET 10 sous Windows. ffmpeg (dans le `PATH` ou `CASTOR_FFMPEG`) n'est utile qu'à la console de debug,
-pour lire des fichiers de test.
+.NET 10 SDK on Windows. ffmpeg (in the `PATH` or `CASTOR_FFMPEG`) is only needed by the debug console,
+to read test files.
 
 ```
 dotnet test Castor.AI.Worker.sln
 dotnet run --project Castor.AI.Dashboard
 ```
 
-Aucun script à lancer pour les modèles : le worker (et les tests) téléchargent ceux qui manquent depuis la
-release `models-v1` de ce repo, vérifiés par SHA-256. Publier un nouveau modèle : `scripts/publish-models.ps1`
-(voir `docs/architecture.md`, section 9).
+No script to run for the models: the worker (and the tests) download the missing ones from the `models-v1`
+release of this repository, checked against their SHA-256. Publishing a new model: `scripts/publish-models.ps1`
+(see `docs/architecture.md`, section 9).

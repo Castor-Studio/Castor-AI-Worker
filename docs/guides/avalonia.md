@@ -30,7 +30,7 @@ exactly like Castor Studio.
 
 Castor Studio references the `Castor.AI` package (GitHub Packages `Castor-Studio`, `Castor.AI.Contracts`
 comes as a dependency); the NuGet source and token are described in the
-[SDK README](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#paquet-nuget).
+[SDK README](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#nuget-package).
 
 ```xml
 <PackageReference Include="Castor.AI" Version="1.0.0" />
@@ -258,7 +258,7 @@ Stopped ─StartAsync─► Starting ──SessionAccepted──► Running ─�
 | `LogReceived` | `WorkerMessage.log`, `error`, `ended` |
 | `SessionStarted` | `WorkerMessage.accepted` (`SessionAccepted`) |
 
-The full sequence diagram is in [Architecture, section 2](../architecture.md#2-cycle-de-vie-dune-session-local).
+The full sequence diagram is in [Architecture, section 2](../architecture.md#2-session-lifecycle-local).
 
 ## Deployment
 
@@ -266,6 +266,6 @@ Studio ships the worker in `ai/` next to the app. Every `v*.*.*` tag of this rep
 `Castor.AI.Worker-<version>-win-x64.zip` (self-contained, no models) and its `.sha256` as assets of the GitHub
 release (`.github/workflows/worker-release.yml`). **Always take the worker of the `Castor.AI` version
 referenced by Studio**: they share `castor_ai.proto` and the shared memory layouts. Download and verification
-script for the installer: [SDK README, "Déploiement"](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#déploiement).
+script for the installer: [SDK README, "Deployment"](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#deployment).
 
 Models are not in the installer: on first launch, the worker downloads the ones of its domain.

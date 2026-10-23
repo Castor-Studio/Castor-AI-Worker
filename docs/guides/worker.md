@@ -30,7 +30,7 @@ Exit codes:
 | 2 | Unknown domain. Checked before touching the models or the pipe (used as the smoke test in `worker-release.yml`). |
 | 3 | Model not found, download or checksum failed (`Warmup.ModelLoadFailedExitCode`). |
 
-Environment variables read by the worker (details in [Architecture, section 9](../architecture.md#9-modèles--installation-et-téléchargement)):
+Environment variables read by the worker (details in [Architecture, section 9](../architecture.md#9-models-installation-and-download)):
 
 | Variable | Role |
 |---|---|
@@ -133,7 +133,7 @@ input used: the app derives the latency from it and drops stale decisions.
 
 **Latest-wins.** Several inputs between two evaluations give a single wake-up; the strategy always reads the
 newest frame. No queue, so delay never builds up. The region layout and the read algorithm are described in
-[Architecture, section 4](../architecture.md#4-format-shared-memory).
+[Architecture, section 4](../architecture.md#4-shared-memory-layout).
 
 **Refused decision.** A suggestion that is not followed (the app sends another `CameraOnAir`) is suggested
 again after 1 s; the worker always reasons about the shot the app really took.
@@ -153,8 +153,8 @@ concurrently:
 
 | Domain | Inputs | Model | Details |
 |---|---|---|---|
-| `podcast` | audio (1 channel per microphone), payloads | Silero VAD | [Architecture, section 7](../architecture.md#7-worker-podcast) |
-| `football` | video 640x360 BGRA8 at 15 fps, 4 cameras max | YOLO (ball) | [Architecture, section 8](../architecture.md#8-worker-football) |
+| `podcast` | audio (1 channel per microphone), payloads | Silero VAD | [Architecture, section 7](../architecture.md#7-podcast-worker) |
+| `football` | video 640x360 BGRA8 at 15 fps, 4 cameras max | YOLO (ball) | [Architecture, section 8](../architecture.md#8-football-worker) |
 
 Adding a domain:
 
