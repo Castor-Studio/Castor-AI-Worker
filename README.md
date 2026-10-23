@@ -15,6 +15,10 @@ repo et utilise celui-ci à travers le SDK client et l'exécutable du worker.
 Architecture, format de la mémoire partagée, stratégies par domaine et gestion des modèles :
 [docs/architecture.md](docs/architecture.md).
 
+Fonctionnement du worker et communication avec l'app Avalonia : site DocFX dans `docs/`
+([guides/worker.md](docs/guides/worker.md), [guides/avalonia.md](docs/guides/avalonia.md)) avec l'API
+reference du SDK, construit en local avec `pwsh eng/Build-Docs.ps1 -Serve` (`http://localhost:8080`).
+
 ## Démarrer
 
 SDK .NET 10 sous Windows. ffmpeg (dans le `PATH` ou `CASTOR_FFMPEG`) n'est utile qu'à la console de debug,
