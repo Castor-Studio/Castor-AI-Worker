@@ -7,8 +7,8 @@ Objectif : valider la communication **AI <-> App** pour le changement de plan ca
 
 Périmètre : l'architecture couvre le **local et le cloud**. Seul le **local** est implémenté dans le prototype.
 
-Contrat : [`Castor.AI.Contracts/Protos/castor_ai.proto`](../Castor.AI.Contracts/Protos/castor_ai.proto).
-SDK client utilisé par les apps : [`Castor.AI`](../Castor.AI/README.md) (`AiClient`).
+Contrat : [`Castor.AI.Contracts/Protos/castor_ai.proto`](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI.Contracts/Protos/castor_ai.proto).
+SDK client utilisé par les apps : [`Castor.AI`](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md) (`AiClient`).
 
 ---
 

@@ -1,0 +1,8 @@
+- name: Vue d'ensemble
+  href: ../index.md
+- name: Fonctionnement du worker
+  href: worker.md
+- name: Communiquer depuis l'app Avalonia
+  href: avalonia.md
+- name: Architecture et formats
+  href: ../architecture.md

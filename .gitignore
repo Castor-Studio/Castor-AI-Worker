@@ -5,3 +5,7 @@ obj/
 *.user
 packs/*/models/
 samples/
+
+# DocFX generated documentation (built locally with eng/Build-Docs.ps1)
+/docs/api/
+/docs/_site/
