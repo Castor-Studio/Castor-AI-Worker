@@ -13,7 +13,7 @@ is built locally from the repository; nothing is hosted.
   per-domain strategies, failures.
 - [Talking to the worker from the Avalonia app](guides/avalonia.md): registering `AiClient`, opening a
   session, pushing audio, video and payloads, handling suggestions on the UI thread, lifecycle and deployment.
-- [Architecture and formats](architecture.md) (French): local / cloud overview, sequence diagram, real time,
+- [Architecture and formats](architecture.md): local / cloud overview, sequence diagram, real time,
   shared memory layout, Podcast and Football workers, model hosting.
 - [API reference](api/Castor.AI.yml): the public C# API of the SDK (`Castor.AI`) and of the contract
   (`Castor.AI.Contracts`), generated from the XML doc comments.
