@@ -1,73 +1,73 @@
-# Castor AI — Architecture du prototype
+# Castor AI — Prototype architecture
 
-Objectif : valider la communication **AI <-> App** pour le changement de plan caméra en temps réel (stream).
+Goal: validate the **AI <-> App** communication for real-time camera shot switching (stream).
 
-- **App** : petite app Avalonia qui joue le rôle de Castor-Studio et affiche ce que la vraie app recevrait.
-- **Worker** : process IA unitaire par domaine (podcast, football, basket…). Il reçoit payload et/ou vidéo et/ou audio, et renvoie des décisions de plan (`SceneDecision`).
+- **App**: small Avalonia app that plays the role of Castor-Studio and shows what the real app would receive.
+- **Worker**: single AI process per domain (podcast, football, basketball…). It receives payloads and/or video and/or audio, and sends back shot decisions (`SceneDecision`).
 
-Périmètre : l'architecture couvre le **local et le cloud**. Seul le **local** est implémenté dans le prototype.
+Scope: the architecture covers **local and cloud**. Only **local** is implemented in the prototype.
 
-Contrat : [`Castor.AI.Contracts/Protos/castor_ai.proto`](../Castor.AI.Contracts/Protos/castor_ai.proto).
-SDK client utilisé par les apps : [`Castor.AI`](../Castor.AI/README.md) (`AiClient`).
+Contract: [`Castor.AI.Contracts/Protos/castor_ai.proto`](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI.Contracts/Protos/castor_ai.proto).
+Client SDK used by the apps: [`Castor.AI`](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md) (`AiClient`).
 
 ---
 
-## 1. Vue d'ensemble
+## 1. Overview
 
 ```
 Castor-Studio (Avalonia)
-  AiClient (SDK Castor.AI) ── IAiProvider ──┐
-  DecisionArbiter                     ├─ LocalWorkerProvider   [implémenté]
-                                      │    spawn + supervise Castor.AI.Worker.exe
-                                      │    gRPC sur named pipe : contrôle, payload, décisions
-                                      │    médias : shared memory (1 région par caméra + 1 audio)
+  AiClient (Castor.AI SDK) ── IAiProvider ──┐
+  DecisionArbiter                     ├─ LocalWorkerProvider   [implemented]
+                                      │    spawns + supervises Castor.AI.Worker.exe
+                                      │    gRPC over named pipe: control, payloads, decisions
+                                      │    media: shared memory (1 region per camera + 1 audio)
                                       │
-                                      └─ CloudProvider   [design seulement]
+                                      └─ CloudProvider   [design only]
                                            AiGateway.AllocateSession -> endpoint + ingest_uri
-                                           gRPC TLS : contrôle, payload, décisions
-                                           médias : flux encodé (SRT, H.264 basse résolution, Opus)
-                                           ──> pod Worker : décodeur ──SHM──> Worker (même binaire)
+                                           gRPC TLS: control, payloads, decisions
+                                           media: encoded stream (SRT, low-resolution H.264, Opus)
+                                           ──> Worker pod: decoder ──SHM──> Worker (same binary)
 ```
 
-### Composants
+### Components
 
-| Composant | Rôle |
+| Component | Role |
 |---|---|
-| `AiClient` | Façade unique côté app (SDK `Castor.AI`). Session, horloge, arbitre, flux audio. L'app ne connaît que lui. |
-| `IAiProvider` | Abstraction local/cloud : démarrer une session, pousser les médias, recevoir les décisions. |
-| `LocalWorkerProvider` | Lance le worker, crée les régions SHM, écrit les frames, ouvre le stream gRPC, gère les crash et redémarrages. |
-| `CloudProvider` | (design) Alloue une session via `AiGateway`, pousse un flux encodé, même stream gRPC. |
-| `DecisionArbiter` | Côté app. Transforme les **suggestions** du worker en **plan à l'antenne** : seuil de confiance, `min_hold_ms`, rejet des décisions périmées, override manuel. |
-| `Castor.AI.Worker` | Process .NET + ONNX Runtime. Un binaire, un domaine choisi au lancement. Identique en local et dans le cloud. |
-| `IFrameSource` (worker) | Abstraction de lecture des médias : SHM en local ; dans le cloud, SHM alimentée par le décodeur du pod. |
+| `AiClient` | Single facade on the app side (`Castor.AI` SDK). Session, clock, arbiter, audio feed. The app only knows this type. |
+| `IAiProvider` | Local/cloud abstraction: start a session, push media, receive decisions. |
+| `LocalWorkerProvider` | Starts the worker, creates the SHM regions, writes the frames, opens the gRPC stream, handles crashes and restarts. |
+| `CloudProvider` | (design) Allocates a session through `AiGateway`, pushes an encoded stream, same gRPC stream. |
+| `DecisionArbiter` | App side. Turns worker **suggestions** into the **shot on air**: confidence threshold, `min_hold_ms`, stale decision rejection, manual override. |
+| `Castor.AI.Worker` | .NET + ONNX Runtime process. One binary, one domain chosen at launch. Identical locally and in the cloud. |
+| `IFrameSource` (worker) | Media reading abstraction: SHM locally; in the cloud, SHM fed by the pod decoder. |
 
-### Choix techniques
+### Technical choices
 
-- **Worker en C# .NET + ONNX Runtime.** Les modèles sont entraînés en Python puis exportés en `.onnx`. Aucune runtime Python n'est embarquée chez l'utilisateur. GPU via DirectML (Windows, tous vendeurs) ; CUDA dans le cloud.
-- **Worker hors process.** Isolation des crash et de la mémoire GPU, et même forme en local et dans le cloud.
-- **gRPC pour le contrôle, jamais pour les médias bruts.** Les frames passent par SHM ; gRPC ne porte que des notifications (« doorbell »).
-- **Local : gRPC sur named pipe** (Kestrel `ListenNamedPipe`, .NET 8+). Fallback possible : `localhost` TCP.
+- **Worker in C# .NET + ONNX Runtime.** Models are trained in Python then exported to `.onnx`. No Python runtime is shipped to the user. GPU through DirectML (Windows, all vendors); CUDA in the cloud.
+- **Out-of-process worker.** Isolates crashes and GPU memory, and keeps the same shape locally and in the cloud.
+- **gRPC for control, never for raw media.** Frames go through SHM; gRPC only carries notifications ("doorbell").
+- **Local: gRPC over named pipe** (Kestrel `ListenNamedPipe`, .NET 8+). Possible fallback: `localhost` TCP.
 
 ---
 
-## 2. Cycle de vie d'une session (local)
+## 2. Session lifecycle (local)
 
-1. `LocalWorkerProvider` lance `Castor.AI.Worker.exe --domain <d> --pipe <name> --parent-pid <pid>`.
-   - Le worker se termine si le process parent disparaît.
-2. `LocalWorkerProvider` appelle `Health` jusqu'à `STATUS_READY` (timeout configurable), puis `GetCapabilities`.
-3. L'app adapte la session aux capabilities :
-   - nombre de caméras ≤ `max_cameras` ;
-   - downscale vers `preferred_video` (ex. 640x360 BGRA, 10–15 fps) ;
-   - audio vers `preferred_audio` (ex. 16 kHz, f32, 1 canal par micro).
-4. L'app crée les régions SHM, puis ouvre `Session` et envoie `SessionStart`.
-5. Le worker mappe les régions et répond `SessionAccepted` (ou `SessionError`).
-6. Boucle :
-   - app : écrit les frames et l'audio en SHM, envoie `VideoFrameReady` / `AudioReady` et les `PayloadEvent` ;
-   - worker : envoie des `SceneDecision`, des `WorkerStats` (~1/s) et des `WorkerLog` ;
-   - app : l'arbiter choisit le plan à l'antenne et renvoie `CameraOnAir` au worker.
-7. Fin : `SessionStop`, puis `SessionEnded`. L'app libère les régions.
+1. `LocalWorkerProvider` starts `Castor.AI.Worker.exe --domain <d> --pipe <name> --parent-pid <pid>`.
+   - The worker exits if the parent process goes away.
+2. `LocalWorkerProvider` calls `Health` until `STATUS_READY` (configurable timeout), then `GetCapabilities`.
+3. The app adapts the session to the capabilities:
+   - number of cameras ≤ `max_cameras`;
+   - downscale to `preferred_video` (e.g. 640x360 BGRA, 10–15 fps);
+   - audio to `preferred_audio` (e.g. 16 kHz, f32, 1 channel per microphone).
+4. The app creates the SHM regions, then opens `Session` and sends `SessionStart`.
+5. The worker maps the regions and answers `SessionAccepted` (or `SessionError`).
+6. Loop:
+   - app: writes frames and audio to SHM, sends `VideoFrameReady` / `AudioReady` and the `PayloadEvent`s;
+   - worker: sends `SceneDecision`s, `WorkerStats` (every 250 ms) and `WorkerLog`s;
+   - app: the arbiter picks the shot on air and sends `CameraOnAir` back to the worker.
+7. End: `SessionStop`, then `SessionEnded`. The app releases the regions.
 
-### Diagramme de séquence
+### Sequence diagram
 
 ```mermaid
 sequenceDiagram
@@ -78,146 +78,146 @@ sequenceDiagram
     participant SHM as Shared memory
     participant W as Castor.AI.Worker
 
-    Note over UI,W: Démarrage du worker
+    Note over UI,W: Worker startup
     UI->>AR: StartSession(domain, cameras)
     AR->>LP: StartSession(domain, cameras)
     LP->>W: spawn Castor.AI.Worker.exe --domain --pipe --parent-pid
-    loop jusqu'à READY ou timeout
+    loop until READY or timeout
         LP->>W: Health()
         W-->>LP: HealthResponse(STARTING / READY)
     end
     LP->>W: GetCapabilities()
     W-->>LP: WorkerCapabilities(max_cameras, preferred_video, preferred_audio)
 
-    Note over UI,W: Ouverture de la session
-    LP->>LP: adapte la session (nb caméras, downscale, format audio)
-    LP->>SHM: CreateNew régions vidéo (1 par caméra) + audio
-    LP->>W: Session() ouvre le stream bidirectionnel
+    Note over UI,W: Session opening
+    LP->>LP: adapts the session (camera count, downscale, audio format)
+    LP->>SHM: CreateNew video regions (1 per camera) + audio
+    LP->>W: Session() opens the bidirectional stream
     LP->>W: ClientMessage.start = SessionStart(cameras, SharedMemoryTransport)
-    W->>SHM: OpenExisting régions
-    alt session acceptée
+    W->>SHM: OpenExisting regions
+    alt session accepted
         W-->>LP: WorkerMessage.accepted = SessionAccepted
-        LP-->>AR: session prête
-    else refus
+        LP-->>AR: session ready
+    else refused
         W-->>LP: WorkerMessage.error = SessionError(fatal)
-        LP-->>AR: échec, fallback manuel
+        LP-->>AR: failure, manual fallback
     end
 
-    Note over UI,W: Boucle temps réel
-    par Vidéo (par caméra, 10-15 fps)
-        LP->>SHM: écrit frame seq=n dans slot n % slot_count
+    Note over UI,W: Real-time loop
+    par Video (per camera, 10-15 fps)
+        LP->>SHM: writes frame seq=n in slot n % slot_count
         LP->>W: video_frame = VideoFrameReady(camera_id, seq, pts_us)
-        W->>SHM: lit latest_seq, copie le slot, vérifie seq (latest-wins)
+        W->>SHM: reads latest_seq, copies the slot, checks seq (latest-wins)
     and Audio
-        LP->>SHM: écrit PCM dans le ring buffer, avance write_frame
+        LP->>SHM: writes PCM in the ring buffer, advances write_frame
         LP->>W: audio = AudioReady(write_frame, pts_us)
-        W->>SHM: lit la fenêtre audio
+        W->>SHM: reads the audio window
     and Payload
-        UI->>LP: événement métier (score, marqueur...)
+        UI->>LP: business event (score, marker...)
         LP->>W: payload = PayloadEvent(pts_us, type, data)
     end
-    W->>W: inférence ONNX + stratégie du domaine
+    W->>W: ONNX inference + domain strategy
     W-->>LP: decision = SceneDecision(camera_id, confidence, source_pts_us, min_hold_ms)
     LP-->>AR: SceneDecision
-    AR->>AR: arbitrage (confiance, min_hold, péremption, override)
-    alt plan changé
-        AR->>UI: change le plan à l'antenne
+    AR->>AR: arbitration (confidence, min_hold, staleness, override)
+    alt shot changed
+        AR->>UI: changes the shot on air
         AR->>LP: CameraOnAir(camera_id, pts_us, manual=false)
         LP->>W: on_air = CameraOnAir
-    else décision ignorée
-        AR->>UI: affiche la décision rejetée (debug)
+    else decision ignored
+        AR->>UI: shows the rejected decision (debug)
     end
-    opt override manuel
-        UI->>AR: clic caméra
+    opt manual override
+        UI->>AR: camera click
         AR->>LP: CameraOnAir(camera_id, pts_us, manual=true)
         LP->>W: on_air = CameraOnAir
     end
-    W-->>LP: stats = WorkerStats (environ 1/s), log = WorkerLog
-    LP-->>UI: affiche stats et logs
+    W-->>LP: stats = WorkerStats (every 250 ms), log = WorkerLog
+    LP-->>UI: shows stats and logs
 
-    Note over UI,W: Fin de session
+    Note over UI,W: Session end
     UI->>AR: StopSession()
     AR->>LP: StopSession()
     LP->>W: stop = SessionStop(reason)
     W-->>LP: ended = SessionEnded
-    LP->>SHM: libère les régions
-    LP->>W: arrêt du process (ou réutilisation)
+    LP->>SHM: releases the regions
+    LP->>W: process shutdown (or reuse)
 ```
 
-### Pannes
+### Failures
 
-- Stream gRPC coupé ou `Health` KO : l'app passe en **fallback** (garde le plan courant ou bascule en mode manuel), puis relance le worker avec backoff (1 s, 2 s, 5 s…).
-- Aucune décision reçue depuis N secondes : `DecisionArbiter` signale « IA muette » dans l'UI, sans changer le plan.
-- `SessionError.fatal = true` : session terminée, même traitement qu'une coupure.
-
----
-
-## 3. Temps réel
-
-- **Horloge maître = app.** `pts_us` en microsecondes depuis `SessionStart`, monotone. Toute décision référence `source_pts_us`.
-- **Latest-wins.** Le worker traite toujours la frame la plus récente et ignore les autres (`frames_dropped`). Aucune file d'attente : le retard ne s'accumule jamais.
-- **Péremption.** L'arbiter ignore une décision si `now - source_pts_us > max_decision_age_ms` (défaut 500 ms).
-- **Budget de latence cible (local)** : < 300 ms entre la frame source et la décision reçue. Mesuré et affiché dans l'app de prototype.
-- **Hystérésis.** C'est l'arbiter qui l'applique, pas le worker : `min_hold_ms`, seuil de confiance, et un écart minimal de score avant de changer de plan.
+- gRPC stream broken or `Health` failing: the app goes into **fallback** (keeps the current shot or switches to manual mode), then restarts the worker with backoff (1 s, 2 s, 5 s…).
+- No decision received for N seconds: `DecisionArbiter` reports "AI silent" in the UI, without changing the shot.
+- `SessionError.fatal = true`: session over, handled like a disconnection.
 
 ---
 
-## 4. Format shared memory
+## 3. Real time
 
-Nommage :
+- **Master clock = app.** `pts_us` in microseconds since `SessionStart`, monotonic. Every decision references `source_pts_us`.
+- **Latest-wins.** The worker always processes the most recent frame and ignores the others (`frames_dropped`). No queue: delay never builds up.
+- **Staleness.** The arbiter ignores a decision if `now - source_pts_us > max_decision_age_ms` (default 500 ms).
+- **Target latency budget (local)**: < 300 ms between the source frame and the received decision. Measured and shown in the prototype app.
+- **Hysteresis.** Applied by the arbiter, not the worker: `min_hold_ms`, confidence threshold, and a minimal score gap before changing the shot.
 
-- Windows : `Local\castor-<session_id>-video-<index>`, `Local\castor-<session_id>-audio`
-- Linux (cloud) : `/dev/shm/castor-<session_id>-...`
+---
 
-`<index>` = rang de la caméra dans `SessionStart.cameras` : un id de caméra peut contenir n'importe quel
-caractère. `VideoRegion.camera_id` porte la correspondance. Le SDK ne crée les régions vidéo que si le worker
-déclare `INPUT_KIND_VIDEO` et un `preferred_video` BGRA8 ; il écrit alors toutes les caméras à cette taille.
+## 4. Shared memory layout
 
-Côté .NET : `MemoryMappedFile.CreateNew` (app) / `OpenExisting` (worker). Little-endian. Tous les offsets sont alignés sur 64 octets.
+Naming:
 
-### Région vidéo (une par caméra)
+- Windows: `Local\castor-<session_id>-video-<index>`, `Local\castor-<session_id>-audio`
+- Linux (cloud): `/dev/shm/castor-<session_id>-...`
+
+`<index>` = rank of the camera in `SessionStart.cameras`: a camera id may contain any character.
+`VideoRegion.camera_id` carries the mapping. The SDK only creates the video regions if the worker declares
+`INPUT_KIND_VIDEO` and a BGRA8 `preferred_video`; it then writes every camera at that size.
+
+On the .NET side: `MemoryMappedFile.CreateNew` (app) / `OpenExisting` (worker). Little-endian. Every offset is 64-byte aligned.
+
+### Video region (one per camera)
 
 ```
 RegionHeader (64 B)
   0   u32  magic        = 'CSVF' (0x46565343)
   4   u16  version      = 1
   6   u16  slot_count   (>= 3)
-  8   u32  slot_size    (bytes, header de slot inclus, multiple de 64)
+  8   u32  slot_size    (bytes, slot header included, multiple of 64)
   12  u32  width
   16  u32  height
   20  u32  stride
   24  u32  pixel_format (enum PixelFormat)
   28  u32  reserved
-  32  u64  latest_seq   (0 = aucune frame ; écrit en dernier, Volatile.Write)
+  32  u64  latest_seq   (0 = no frame; written last, Volatile.Write)
   40..63   reserved
 
-Slot[i] à offset 64 + i * slot_size
+Slot[i] at offset 64 + i * slot_size
   SlotHeader (64 B)
-    0   u64  seq          (écrit en dernier)
+    0   u64  seq          (written last)
     8   i64  pts_us
     16  u32  data_size
     20..63   reserved
-  Data (data_size octets)
+  Data (data_size bytes)
 ```
 
-**Écriture (app), frame `seq = n` :**
+**Write (app), frame `seq = n`:**
 
-1. Choisir `slot = n % slot_count`.
-2. Mettre `slot.seq = 0` (slot invalide pendant l'écriture).
-3. Écrire `pts_us`, `data_size`, puis les pixels.
+1. Pick `slot = n % slot_count`.
+2. Set `slot.seq = 0` (slot invalid while writing).
+3. Write `pts_us`, `data_size`, then the pixels.
 4. `Volatile.Write(slot.seq, n)`.
 5. `Volatile.Write(header.latest_seq, n)`.
-6. Envoyer `VideoFrameReady{seq = n}`.
+6. Send `VideoFrameReady{seq = n}`.
 
-**Lecture (worker) :**
+**Read (worker):**
 
-1. `n = Volatile.Read(latest_seq)`. Si `n` = dernier traité : rien à faire.
-2. `slot = n % slot_count`. Vérifier `slot.seq == n`, copier les données, puis relire `slot.seq`.
-3. Si `slot.seq` a changé : frame déchirée, on la jette (`frames_torn`) et on recommence à l'étape 1.
+1. `n = Volatile.Read(latest_seq)`. If `n` = last processed: nothing to do.
+2. `slot = n % slot_count`. Check `slot.seq == n`, copy the data, then read `slot.seq` again.
+3. If `slot.seq` changed: torn frame, drop it (`frames_torn`) and start again at step 1.
 
-Avec `slot_count >= 3` et un worker qui copie la frame avant l'inférence, les frames déchirées restent rares.
+With `slot_count >= 3` and a worker that copies the frame before inference, torn frames stay rare.
 
-### Région audio
+### Audio region
 
 ```
 AudioHeader (64 B)
@@ -226,124 +226,124 @@ AudioHeader (64 B)
   6   u16  channels
   8   u32  sample_rate
   12  u32  capacity_frames
-  16  u64  write_frame    (total frames écrites ; Volatile.Write après les données)
-  24  i64  base_pts_us    (pts de la frame 0)
+  16  u64  write_frame    (total frames written; Volatile.Write after the data)
+  24  i64  base_pts_us    (pts of frame 0)
   32..63   reserved
-Data : ring buffer float32 interleaved, capacity_frames * channels
+Data: interleaved float32 ring buffer, capacity_frames * channels
 ```
 
 - `pts(frame k) = base_pts_us + k * 1e6 / sample_rate`.
-- Le worker lit la fenêtre `[write_frame - window, write_frame)`. Si son retard dépasse `capacity_frames`, il saute en avant.
-- Mapping micro / caméra : `CameraDescriptor.audio_channel`.
-- Capacité conseillée : 2 s.
+- The worker reads the window `[write_frame - window, write_frame)`. If it falls behind by more than `capacity_frames`, it jumps forward.
+- Microphone / camera mapping: `CameraDescriptor.audio_channel`.
+- Recommended capacity: 2 s.
 
 ---
 
-## 5. Cloud (design, non implémenté)
+## 5. Cloud (design, not implemented)
 
-1. `CloudProvider` appelle `AiGateway.AllocateSession(domain, camera_count, inputs)` et reçoit `worker_endpoint`, `ingest_uri` et `access_token`.
-2. L'app pousse les caméras downscalées et l'audio en flux encodé vers `ingest_uri` (SRT, H.264 + Opus, un stream par caméra).
-3. L'app ouvre `AiWorker.Session` sur `worker_endpoint` (gRPC TLS + token), avec `EncodedStreamTransport` dans `SessionStart`.
-4. Dans le pod :
-   - un décodeur (FFmpeg) écrit dans la SHM du pod, au même format qu'en local ;
-   - le worker est le même binaire et lit cette SHM.
-5. La session est **affine** à un pod : le stream gRPC et l'ingest pointent vers le même pod pendant toute la session. Le LB (ex. Envoy) doit gérer HTTP/2 et les streams longs.
-6. Aucun `VideoFrameReady` n'est envoyé : le décodeur du pod notifie le worker en interne.
+1. `CloudProvider` calls `AiGateway.AllocateSession(domain, camera_count, inputs)` and receives `worker_endpoint`, `ingest_uri` and `access_token`.
+2. The app pushes the downscaled cameras and the audio as an encoded stream to `ingest_uri` (SRT, H.264 + Opus, one stream per camera).
+3. The app opens `AiWorker.Session` on `worker_endpoint` (gRPC TLS + token), with `EncodedStreamTransport` in `SessionStart`.
+4. In the pod:
+   - a decoder (FFmpeg) writes into the pod SHM, in the same layout as locally;
+   - the worker is the same binary and reads that SHM.
+5. The session is **affine** to a pod: the gRPC stream and the ingest point to the same pod for the whole session. The LB (e.g. Envoy) must handle HTTP/2 and long-lived streams.
+6. No `VideoFrameReady` is sent: the pod decoder notifies the worker internally.
 
-Points ouverts pour le cloud :
+Open points for the cloud:
 
-- latence réseau et encodage (probablement 150–400 ms de plus) ;
-- coût GPU par session ;
-- authentification ;
-- choix local/cloud par domaine dans `AiClient` (choix du provider).
+- network and encoding latency (probably 150–400 ms more);
+- GPU cost per session;
+- authentication;
+- local/cloud choice per domain in `AiClient` (provider choice).
 
 ---
 
-## 6. Structure du repo
+## 6. Repository layout
 
-Repo `Castor-AI-Worker` (GitHub `Castor-Studio/Castor-AI-Worker`), séparé de Castor Studio. Studio n'en consomme
-que le SDK (`Castor.AI` + `Castor.AI.Contracts`) et le binaire du worker.
+Repository `Castor-AI-Worker` (GitHub `Castor-Studio/Castor-AI-Worker`), separate from Castor Studio. Studio only
+consumes the SDK (`Castor.AI` + `Castor.AI.Contracts`) and the worker binary.
 
 ```
 Castor-AI-Worker/
-  docs/architecture.md
+  docs/                    architecture.md, DocFX site (guides/, docfx.json), built by eng/Build-Docs.ps1
   scripts/                 publish-models.ps1, export-football-model.ps1, generate-sample-dialogue.ps1,
                            generate_football_fixtures.py, export_football_model.py
-  packs/<domaine>/models/  modèles téléchargés (ignoré par git)
-  samples/                 dialogue et clips football de test générés (ignoré par git)
-  Castor.AI/               SDK client (AiClient, LocalWorkerProvider, arbitre, flux audio) : référencé par Castor Studio
-  Castor.AI.Contracts/     contrat : proto + code gRPC généré + format SHM (partagé SDK / workers)
-  Castor.AI.Worker/        console : serveur gRPC (named pipe), lecture SHM, stratégies par domaine
-  Castor.AI.Dashboard/        console de debug Avalonia, n'utilise l'IA qu'à travers Castor.AI
-  Castor.AI.Tests/         xUnit : AiClient, arbitre, flux audio, flux vidéo
-  Castor.AI.Worker.Tests/  xUnit : director, rôles, VAD, rings audio et vidéo, football (parité Python)
+  packs/<domain>/models/   downloaded models (ignored by git)
+  samples/                 generated test dialogue and football clips (ignored by git)
+  Castor.AI/               client SDK (AiClient, LocalWorkerProvider, arbiter, audio feed): referenced by Castor Studio
+  Castor.AI.Contracts/     contract: proto + generated gRPC code + SHM layout (shared by SDK / workers)
+  Castor.AI.Worker/        console: gRPC server (named pipe), SHM reading, per-domain strategies
+  Castor.AI.Dashboard/     Avalonia debug console, uses the AI only through Castor.AI
+  Castor.AI.Tests/         xUnit: AiClient, arbiter, audio feed, video feed
+  Castor.AI.Worker.Tests/  xUnit: director, roles, VAD, audio and video rings, football (Python parity)
   Castor.AI.Worker.sln
 ```
 
-### UI de l'app de prototype
+### Prototype app UI
 
-L'app est une console de debug pour l'équipe IA, **générique** : rien n'y est propre au podcast.
+The app is a debug console for the AI team, and it is **generic**: nothing in it is podcast-specific.
 
-- **Profils de session** (`profiles/*.json`) : domaine du worker, caméras (id, label, rôle, micro, fichier audio),
-  `params`, règles de l'arbitre, et boutons par caméra (`camera_actions` : payload envoyé, en bouton ou en
-  bascule on/off). Un nouveau modèle IA = un nouveau profil, sans toucher au code de l'app.
-- **Capabilities** : le worker déclare ses métriques (`MetricDescriptor`, par session ou par caméra, avec
-  unité et plage) et ses flags par caméra (`FlagDescriptor`). L'app en déduit les jauges et badges des
-  cartes caméra et un graphe par métrique ; `WorkerStats.metrics` / `WorkerStats.cameras` portent les valeurs.
-- **Vues temps réel** : timeline des plans à l'antenne (60 s, IA / manuel, suggestions acceptées ou rejetées),
-  graphe de latence (âge de la décision à réception, temps de traitement worker, inférence moyenne) avec
-  p50 / p95 / max sur 30 s, liste des `SceneDecision` (raison du worker, verdict de l'arbitre, scores,
-  transition), envoi manuel de n'importe quel payload déclaré, onglet capabilities, logs.
-- `--autostart [nom du profil]` démarre une session au lancement.
+- **Session profiles** (`profiles/*.json`): worker domain, cameras (id, label, role, microphone, audio file),
+  `params`, arbiter rules, and per-camera buttons (`camera_actions`: payload sent, as a button or an on/off
+  toggle). A new AI model = a new profile, without touching the app code.
+- **Capabilities**: the worker declares its metrics (`MetricDescriptor`, per session or per camera, with
+  unit and range) and its per-camera flags (`FlagDescriptor`). The app derives the gauges and badges of the
+  camera cards and one chart per metric from them; `WorkerStats.metrics` / `WorkerStats.cameras` carry the values.
+- **Real-time views**: timeline of the shots on air (60 s, AI / manual, accepted or rejected suggestions),
+  latency chart (decision age at reception, worker processing time, average inference) with
+  p50 / p95 / max over 30 s, list of `SceneDecision`s (worker reason, arbiter verdict, scores,
+  transition), manual sending of any declared payload, capabilities tab, logs.
+- `--autostart [profile name]` starts a session at launch.
 
-### Étapes
+### Milestones
 
-1. ~~Contracts, plus un worker « Podcast » qui ne lit que le payload, plus l'app qui affiche les décisions.~~ Fait.
-2. ~~Vidéo par SHM : sources de test (fichiers via FFmpeg, ou image fixe), downscale, doorbell.~~ Fait, voir section 8.
-3. ~~Audio par SHM : stratégie Podcast « qui parle » (Silero VAD par micro, puis caméra liée).~~ Fait, voir section 7.
-4. Inférence ONNX : ~~CPU + mesure de latence~~ (fait, section 8) ; reste DirectML et le stress test sur le nombre de caméras.
-5. Plus tard : `CloudProvider` et `AiGateway`.
+1. ~~Contracts, plus a "Podcast" worker that only reads payloads, plus the app that shows the decisions.~~ Done.
+2. ~~Video through SHM: test sources (files through FFmpeg, or still image), downscale, doorbell.~~ Done, see section 8.
+3. ~~Audio through SHM: "who is talking" Podcast strategy (Silero VAD per microphone, then linked camera).~~ Done, see section 7.
+4. ONNX inference: ~~CPU + latency measurement~~ (done, section 8); DirectML and the camera count stress test remain.
+5. Later: `CloudProvider` and `AiGateway`.
 
 ---
 
-## 7. Worker Podcast
+## 7. Podcast worker
 
-Port en C# du module Python `castostudio_ai_podcast` (Castor-AI, branche `dev`, « director engine v2 »).
-Les tests pytest correspondants sont portés en xUnit (`Castor.AI.Worker.Tests/Podcast`).
+C# port of the Python module `castostudio_ai_podcast` (Castor-AI, `dev` branch, "director engine v2").
+The matching pytest tests are ported to xUnit (`Castor.AI.Worker.Tests/Podcast`).
 
 ### Pipeline
 
 ```
-App : fichier audio par micro (ffmpeg) ─► AiClient.WriteAudio ─► AudioFeed du SDK (16 kHz, blocs de 512 frames, 32 ms)
-    ─► ring audio SHM (1 canal par micro) + doorbell AudioReady
-Worker : ring ─► 1 Silero VAD (ONNX) par canal ─► is_speaking + niveau dB
-       + payloads app (camera.metadata / speaker.*) ─► PodcastDirector ─► SceneDecision
+App: audio file per microphone (ffmpeg) ─► AiClient.WriteAudio ─► SDK AudioFeed (16 kHz, 512-frame blocks, 32 ms)
+    ─► SHM audio ring (1 channel per microphone) + AudioReady doorbell
+Worker: ring ─► 1 Silero VAD (ONNX) per channel ─► is_speaking + dB level
+       + app payloads (camera.metadata / speaker.*) ─► PodcastDirector ─► SceneDecision
 ```
 
-- **VAD** : Silero VAD v6.2.1 (même version que Castor-AI), ONNX Runtime CPU, un état récurrent par micro.
-  Port de `OnnxWrapper` + `VADIterator`. Modèle téléchargé par le worker au premier lancement (section 9).
-- **Rôles** : `CameraDescriptor.role` explicite (`host`, `guest`, `guest2`…, `wide`, `<rôle>_zoom`) ;
-  sinon heuristique sur les labels, identique au Python. Le micro d'un rôle = `CameraDescriptor.audio_channel`.
-- **Director** : même algorithme et mêmes paramètres (`SessionStart.params`, mêmes clés que `module_config`) :
-  métadonnées OU VAD, veto « chaise vide » (`person_detected` / `face_detected`), cross-gating, filtre
-  backchannel, silence / débat / orateur unique, zoom monologue, ping-pong, `min_hold_time`.
+- **VAD**: Silero VAD v6.2.1 (same version as Castor-AI), ONNX Runtime CPU, one recurrent state per microphone.
+  Port of `OnnxWrapper` + `VADIterator`. Model downloaded by the worker on first launch (section 9).
+- **Roles**: explicit `CameraDescriptor.role` (`host`, `guest`, `guest2`…, `wide`, `<role>_zoom`);
+  otherwise a heuristic on the labels, identical to the Python one. The microphone of a role = `CameraDescriptor.audio_channel`.
+- **Director**: same algorithm and same parameters (`SessionStart.params`, same keys as `module_config`):
+  metadata OR VAD, "empty chair" veto (`person_detected` / `face_detected`), cross-gating, backchannel
+  filter, silence / debate / single speaker, monologue zoom, ping-pong, `min_hold_time`.
 
-### Écarts volontaires avec le Python
+### Intentional differences with the Python module
 
-| Sujet | Python | Ici | Pourquoi |
+| Topic | Python | Here | Why |
 |---|---|---|---|
-| Plan courant | supposé appliqué dès la décision | vient de `CameraOnAir` (l'app) | l'arbitre ou l'opérateur peuvent refuser ou forcer un plan |
-| Décision refusée | jamais reproposée | reproposée après 1 s | sinon le director reste bloqué sur un plan que l'app n'a pas pris |
-| `level_smoothing_ms` | n'existe pas | 0 par défaut (= Python), 300 dans l'app | voir ci-dessous |
+| Current shot | assumed applied as soon as decided | comes from `CameraOnAir` (the app) | the arbiter or the operator can refuse or force a shot |
+| Refused decision | never suggested again | suggested again after 1 s | otherwise the director stays stuck on a shot the app did not take |
+| `level_smoothing_ms` | does not exist | 0 by default (= Python), 300 in the app | see below |
 
-**Faux débats.** Le cross-gating compare le niveau du dernier chunk (32 ms). Pendant une pause entre deux
-phrases, tous les micros tombent au même plancher alors que la VAD reste « speaking » (hangover de
-`min_silence_duration_ms`) sur le micro de l'orateur *et* sur ceux qui captent sa diaphonie : le gating garde
-tout le monde, et le director coupe en plan large en plein monologue. Mesuré sur le dialogue de test :
-3 faux « Debate → wide » en 52 s sans lissage, 0 avec `level_smoothing_ms=300` (lissage exponentiel de
-l'énergie, qui conserve l'écart de niveau entre micros pendant la pause). Le défaut existe aussi côté Python.
+**Fake debates.** Cross-gating compares the level of the last chunk (32 ms). During a pause between two
+sentences, every microphone drops to the same floor while the VAD stays "speaking" (`min_silence_duration_ms`
+hangover) on the speaker's microphone *and* on the ones picking up their crosstalk: gating keeps everyone,
+and the director cuts to the wide shot in the middle of a monologue. Measured on the test dialogue:
+3 fake "Debate → wide" in 52 s without smoothing, 0 with `level_smoothing_ms=300` (exponential smoothing of
+the energy, which keeps the level gap between microphones during the pause). The flaw also exists in Python.
 
-### Tester
+### Testing
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts/generate-sample-dialogue.ps1
@@ -351,74 +351,74 @@ dotnet test
 dotnet run --project Castor.AI.Dashboard
 ```
 
-`generate-sample-dialogue.ps1` crée `samples/host.wav`, `guest.wav`, `guest2.wav` : un dialogue TTS de 52 s
-(monologue, tours de parole, chevauchement guest/guest2, silence de 4,5 s) avec diaphonie à -20 dB.
-L'app les assigne automatiquement aux caméras de même rôle ; n'importe quel fichier audio ou vidéo peut
-les remplacer (bouton « Audio file… », ffmpeg requis dans le `PATH` ou `CASTOR_FFMPEG`).
+`generate-sample-dialogue.ps1` creates `samples/host.wav`, `guest.wav`, `guest2.wav`: a 52 s TTS dialogue
+(monologue, turn taking, guest/guest2 overlap, 4.5 s silence) with crosstalk at -20 dB.
+The app assigns them automatically to the cameras with the same role; any audio or video file can
+replace them ("Audio file…" button, ffmpeg required in the `PATH` or `CASTOR_FFMPEG`).
 
 ---
 
-## 8. Worker Football
+## 8. Football worker
 
-Port en C# du module Python `castostudio_ai_football` (Castor-AI, branche `dev`) : `BallDetector`,
-`FootballAnalyzer.analyze_once` et `FootballModule.analyze_sources`.
+C# port of the Python module `castostudio_ai_football` (Castor-AI, `dev` branch): `BallDetector`,
+`FootballAnalyzer.analyze_once` and `FootballModule.analyze_sources`.
 
 ### Pipeline
 
 ```
-Studio : frame BGRA de chaque scène (n'importe quelle taille) ─► AiClient.WriteVideo
-    ─► VideoFeed du SDK : mise à l'échelle 640x360, cadence 15 fps max par caméra
-    ─► région vidéo SHM (1 par caméra, 3 slots, latest-wins) + doorbell VideoFrameReady
-Worker : dernière frame de chaque caméra ─► resize 416x416 (même interpolation que cv2.INTER_LINEAR)
-       ─► YOLO (ONNX Runtime CPU) ─► « ballon trouvé » par caméra ─► FootballFocus ─► SceneDecision
+Studio: BGRA frame of each scene (any size) ─► AiClient.WriteVideo
+    ─► SDK VideoFeed: scaling to 640x360, 15 fps max per camera
+    ─► SHM video region (1 per camera, 3 slots, latest-wins) + VideoFrameReady doorbell
+Worker: latest frame of each camera ─► 416x416 resize (same interpolation as cv2.INTER_LINEAR)
+       ─► YOLO (ONNX Runtime CPU) ─► "ball found" per camera ─► FootballFocus ─► SceneDecision
 ```
 
-- **Modèle** : `checkpoint_5.pt` de Castor-AI (YOLOv9c COCO, classe 32 « sports ball »), exporté en
-  `packs/football/models/checkpoint_5_416.onnx` par `scripts/export-football-model.ps1` (ultralytics de
-  l'environnement Castor-AI, entrée statique 1x3x416x416, opset 17), puis publié dans la release `models-v1`
-  par `scripts/publish-models.ps1` (section 9). Seul l'export demande un checkout de Castor-AI.
-- **Détection** : mêmes seuils que `constants.py` (`PREDICTION_CONFIDENCE` 0,25, `BALL_CONFIDENCE` 0,60).
-  Ultralytics garde une boîte si sa meilleure classe dépasse 0,25 et l'étiquette avec cette classe ; la NMS
-  n'enlève jamais la meilleure boîte d'une classe. « Ballon trouvé » se calcule donc sans NMS : une ancre dont
-  la meilleure classe est le ballon, avec un score ≥ 0,60.
-- **Règle** (identique au Python pour 2 caméras, appliquée à N) : ballon sur une seule caméra = focus sur
-  elle ; ballon sur plusieurs caméras ou sur aucune = focus inchangé ; rien tant que chaque caméra n'a pas été
-  analysée une fois.
-- **Paramètres** (`SessionStart.params`) : `default_confidence` (1,0), `frameskip` (0), plus, absents du
-  Python : `ball_confidence`, `prediction_confidence`, `swap_red_blue`, `min_hold_ms` (0 = règle de l'arbitre).
-- **Capabilities** : vidéo requise, 640x360 BGRA8 à 15 fps, 4 caméras max ; métriques par caméra
-  `ball_conf`, `detect_ms` ; flags `BALL`, `FOCUS`.
+- **Model**: Castor-AI's `checkpoint_5.pt` (YOLOv9c COCO, class 32 "sports ball"), exported to
+  `packs/football/models/checkpoint_5_416.onnx` by `scripts/export-football-model.ps1` (ultralytics from the
+  Castor-AI environment, static input 1x3x416x416, opset 17), then published in the `models-v1` release
+  by `scripts/publish-models.ps1` (section 9). Only the export needs a Castor-AI checkout.
+- **Detection**: same thresholds as `constants.py` (`PREDICTION_CONFIDENCE` 0.25, `BALL_CONFIDENCE` 0.60).
+  Ultralytics keeps a box if its best class is above 0.25 and labels it with that class; NMS never
+  removes the best box of a class. "Ball found" is therefore computed without NMS: an anchor whose
+  best class is the ball, with a score ≥ 0.60.
+- **Rule** (identical to Python for 2 cameras, applied to N): ball on a single camera = focus on
+  it; ball on several cameras or on none = focus unchanged; nothing until every camera has been
+  analyzed once.
+- **Parameters** (`SessionStart.params`): `default_confidence` (1.0), `frameskip` (0), plus, absent from
+  Python: `ball_confidence`, `prediction_confidence`, `swap_red_blue`, `min_hold_ms` (0 = arbiter rule).
+- **Capabilities**: video required, 640x360 BGRA8 at 15 fps, 4 cameras max; per-camera metrics
+  `ball_conf`, `detect_ms`; flags `BALL`, `FOCUS`.
 
-### Parité avec le Python
+### Parity with Python
 
-`Castor.AI.Worker.Tests/Football` compare le port au vrai pipeline ultralytics sur des frames générées par
-`scripts/generate_football_fixtures.py` (terrain avec ballon, terrain vide, photo `zidane.jpg` d'ultralytics) :
-mêmes classes gardées, scores à ±0,005 près (float32) et ±0,01 près face au Python CUDA demi-précision.
-Le redimensionnement reproduit la passe SIMD de `cv2.resize` (poids 11 bits) : 99,95 % des pixels identiques.
+`Castor.AI.Worker.Tests/Football` compares the port with the real ultralytics pipeline on frames generated by
+`scripts/generate_football_fixtures.py` (pitch with ball, empty pitch, ultralytics' `zidane.jpg` photo):
+same classes kept, scores within ±0.005 (float32) and within ±0.01 of Python CUDA half precision.
+The resize reproduces the SIMD pass of `cv2.resize` (11-bit weights): 99.95 % identical pixels.
 
-### Écarts volontaires avec le Python
+### Intentional differences with the Python module
 
-| Sujet | Python | Ici | Pourquoi |
+| Topic | Python | Here | Why |
 |---|---|---|---|
-| Caméras | 2 premières sources | N caméras (max 4), même règle | Studio peut proposer plus de 2 scènes |
-| Plan courant | dernière décision envoyée | `CameraOnAir` (l'app) | comme le podcast : arbitre et opérateur peuvent refuser ou forcer |
-| Décision refusée | jamais reproposée | reproposée après 1 s | sinon le focus reste bloqué |
-| Flux vidéo | OpenCV lit l'URL de chaque scène | frames brutes en SHM (640x360) | pas d'encodage / décodage en local |
-| Précision | CUDA, demi-précision | ONNX Runtime CPU, float32 | pas de runtime CUDA chez l'utilisateur ; DirectML à faire |
+| Cameras | first 2 sources | N cameras (max 4), same rule | Studio can offer more than 2 scenes |
+| Current shot | last decision sent | `CameraOnAir` (the app) | like the podcast: arbiter and operator can refuse or force |
+| Refused decision | never suggested again | suggested again after 1 s | otherwise the focus stays stuck |
+| Video feed | OpenCV reads the URL of each scene | raw frames in SHM (640x360) | no local encoding / decoding |
+| Precision | CUDA, half precision | ONNX Runtime CPU, float32 | no CUDA runtime on the user's machine; DirectML to do |
 
-**Ordre des canaux.** `detector.py` convertit la frame en RGB, puis ultralytics la retourne à nouveau (il
-attend du BGR pour un tableau numpy) : le modèle reçoit donc du **BGR**, alors qu'il a été entraîné en RGB.
-Le port reproduit ce comportement par défaut. Sur les fixtures, l'ordre RGB (`swap_red_blue=true`) donne
-0,47 au lieu de 0,67 sur le ballon, mais 0,74 au lieu de 0,55 sur la cravate de `zidane.jpg` : à trancher par
-l'équipe IA sur de vraies images de match.
+**Channel order.** `detector.py` converts the frame to RGB, then ultralytics flips it again (it
+expects BGR for a numpy array): the model therefore receives **BGR**, although it was trained on RGB.
+The port reproduces this behavior by default. On the fixtures, RGB order (`swap_red_blue=true`) gives
+0.47 instead of 0.67 on the ball, but 0.74 instead of 0.55 on the tie in `zidane.jpg`: to be decided by
+the AI team on real match images.
 
-### Performances mesurées (Debug, CPU du portable de dev, 2 caméras)
+### Measured performance (Debug, dev laptop CPU, 2 cameras)
 
-- démarrage du worker jusqu'à `SessionAccepted` : 0,7 s (chargement du modèle et première inférence compris) ;
-- détection : ~95 ms par frame, soit ~5 frames analysées par seconde et par caméra ;
-- latence frame source → suggestion reçue : 160–205 ms (cible < 300 ms).
+- worker startup until `SessionAccepted`: 0.7 s (model loading and first inference included);
+- detection: ~95 ms per frame, so ~5 frames analyzed per second and per camera;
+- latency from source frame to received suggestion: 160–205 ms (target < 300 ms).
 
-### Tester
+### Testing
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts/export-football-model.ps1
@@ -429,53 +429,53 @@ dotnet test
 dotnet run --project Castor.AI.Dashboard -- --autostart "Football - 2 cameras"
 ```
 
-Le profil `profiles/football.json` lit `samples/football_left.mp4` et `football_right.mp4` (ballon à gauche
-puis à droite, 3 s chacun, en boucle ; ffmpeg requis). Sans ffmpeg, choisir `samples/football_ball.png` /
-`football_empty.png` avec le bouton « File… » de la ligne vidéo de chaque caméra.
+The `profiles/football.json` profile reads `samples/football_left.mp4` and `football_right.mp4` (ball on the left
+then on the right, 3 s each, looping; ffmpeg required). Without ffmpeg, pick `samples/football_ball.png` /
+`football_empty.png` with the "File…" button of each camera's video row.
 
 ---
 
-## 9. Modèles : installation et téléchargement
+## 9. Models: installation and download
 
-Studio et le worker vivent dans deux repos. Studio ne livre que le worker ; le worker se charge de ses modèles.
+Studio and the worker live in two repositories. Studio only ships the worker; the worker takes care of its models.
 
-Au démarrage, pour chaque modèle de son domaine (`Castor.AI.Worker/Models/models.json`, lu par `ModelCatalog`),
-le worker prend le premier disponible :
+At startup, for each model of its domain (`Castor.AI.Worker/Models/models.json`, read by `ModelCatalog`),
+the worker takes the first available one:
 
-1. un pack installé : `CASTOR_PACKS_DIR`, `packs/` à côté du worker, ou le `packs/` le plus proche au-dessus (dev) ;
-2. le cache : `CASTOR_MODELS_DIR`, sinon `%LOCALAPPDATA%\Castor\models\<domaine>\<fichier>` ;
-3. sinon il le télécharge dans le cache : `CASTOR_MODELS_URL` + `/<fichier>` si la variable existe (miroir,
-   autre release), sinon l'URL du catalogue.
+1. an installed pack: `CASTOR_PACKS_DIR`, `packs/` next to the worker, or the nearest `packs/` above it (dev);
+2. the cache: `CASTOR_MODELS_DIR`, otherwise `%LOCALAPPDATA%\Castor\models\<domain>\<file>`;
+3. otherwise it downloads it into the cache: `CASTOR_MODELS_URL` + `/<file>` if the variable exists (mirror,
+   other release), otherwise the catalog URL.
 
-Chaque téléchargement est vérifié par SHA-256 (épinglé dans `models.json`) dans un fichier temporaire, puis
-renommé : un fichier partiel ou corrompu n'est jamais chargé. Pendant ce temps `Health` reste `STARTING` et
-`detail` porte la progression ; le SDK la remonte dans `StateChanged` et repousse son timeout à chaque progrès.
-Un échec (HTTP, checksum, pas de source) arrête le worker avec le code 3 et un message explicite.
+Every download is checked against its SHA-256 (pinned in `models.json`) in a temporary file, then
+renamed: a partial or corrupted file is never loaded. Meanwhile `Health` stays `STARTING` and
+`detail` carries the progress; the SDK surfaces it in `StateChanged` and pushes its timeout back on each progress report.
+A failure (HTTP, checksum, no source) stops the worker with exit code 3 and an explicit message.
 
-Les tests passent par le même mécanisme (`TestModels`) : aucun script à lancer avant `dotnet test`.
+Tests use the same mechanism (`TestModels`): no script to run before `dotnet test`.
 
-### Hébergement : releases de ce repo
+### Hosting: releases of this repository
 
-Les modèles sont des assets de la release `models-v1` de `Castor-Studio/Castor-AI-Worker`
-(`https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1/<fichier>`). Le repo doit être
-**public** : le worker installé chez l'utilisateur télécharge sans jeton. Les noms de fichiers sont uniques
-entre domaines, tous les modèles d'une version étant côte à côte dans une même release.
+Models are assets of the `models-v1` release of `Castor-Studio/Castor-AI-Worker`
+(`https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/models-v1/<file>`). The repository must be
+**public**: the worker installed on the user's machine downloads without a token. File names are unique
+across domains, since every model of a version sits side by side in the same release.
 
-| Modèle | Fichier | Origine |
+| Model | File | Origin |
 |---|---|---|
-| Silero VAD v6.2.1 (MIT) | `silero_vad.onnx` (2 Mo) | copie du fichier publié par le projet Silero |
-| Ballon (YOLOv9c COCO) | `checkpoint_5_416.onnx` (100 Mo) | `scripts/export-football-model.ps1` |
+| Silero VAD v6.2.1 (MIT) | `silero_vad.onnx` (2 MB) | copy of the file published by the Silero project |
+| Ball (YOLOv9c COCO) | `checkpoint_5_416.onnx` (100 MB) | `scripts/export-football-model.ps1` |
 
-**Configuration** : tout est dans `Castor.AI.Worker/Models/models.json`, embarqué dans le worker :
-`repository` et `release_tag` désignent la release, chaque entrée donne `domain`, `file`, `sha256` et `url`,
-son lien de téléchargement. Seuls les liens de cette release sont acceptés
-(`https://github.com/<repository>/releases/download/<release_tag>/<file>`) : le worker refuse un
-`models.json` qui pointe ailleurs, aucune source tierce ne peut s'y glisser. Changer un lien = éditer ce
-fichier, pas le code.
-`CASTOR_MODELS_MANIFEST=<chemin d'un models.json>` le remplace à l'exécution, sans rebuild.
+**Configuration**: everything is in `Castor.AI.Worker/Models/models.json`, embedded in the worker:
+`repository` and `release_tag` designate the release, each entry gives `domain`, `file`, `sha256` and `url`,
+its download link. Only links of that release are accepted
+(`https://github.com/<repository>/releases/download/<release_tag>/<file>`): the worker refuses a
+`models.json` that points elsewhere, so no third-party source can slip in. Changing a link = editing this
+file, not the code.
+`CASTOR_MODELS_MANIFEST=<path of a models.json>` replaces it at runtime, without a rebuild.
 
-**Publier** : `scripts/publish-models.ps1` (`-DryRun` pour voir sans publier) lit `models.json`, vérifie
-chaque fichier local contre son hash, puis crée la release ou y ajoute les fichiers manquants (`gh`).
-Un asset publié ne change jamais : un nouveau modèle = nouveau nom de fichier, nouveau SHA-256 dans
-`models.json`, et nouvelle release (`models-v2`) si besoin. L'export ONNX n'est pas reproductible octet par
-octet : publier exactement le fichier dont le SHA-256 est épinglé, ou ré-épingler.
+**Publishing**: `scripts/publish-models.ps1` (`-DryRun` to see without publishing) reads `models.json`, checks
+each local file against its hash, then creates the release or adds the missing files to it (`gh`).
+A published asset never changes: a new model = a new file name, a new SHA-256 in
+`models.json`, and a new release (`models-v2`) if needed. The ONNX export is not byte-for-byte
+reproducible: publish exactly the file whose SHA-256 is pinned, or re-pin it.
