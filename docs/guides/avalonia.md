@@ -1,67 +1,66 @@
-# Communiquer depuis l'app Avalonia
+# Talking to the worker from the Avalonia app
 
-L'app Avalonia (Castor Studio, ou la console de debug `Castor.AI.Dashboard`) ne parle **jamais** directement
-au worker : ni gRPC, ni mémoire partagée, ni process. Tout passe par <xref:Castor.AI.AiClient>, la façade du
-SDK `Castor.AI`, qui n'a aucune dépendance UI.
+The Avalonia app (Castor Studio, or the `Castor.AI.Dashboard` debug console) **never** talks to the worker
+directly: no gRPC, no shared memory, no process handling. Everything goes through <xref:Castor.AI.AiClient>,
+the facade of the `Castor.AI` SDK, which has no UI dependency.
 
 ```
-Vue Avalonia ─ binding ─ ViewModel
+Avalonia view ─ binding ─ ViewModel
                            │ StartAsync, ReportOnAir, WriteAudio, WriteVideo, SendPayload
                            ▼
-                        AiClient ── horloge de session, arbitre (mode Auto), AudioFeed, VideoFeed
+                        AiClient ── session clock, arbiter (Auto mode), AudioFeed, VideoFeed
                            │ IAiProvider
                            ▼
-                        LocalWorkerProvider ── lance Castor.AI.Worker.exe, supervise, redémarre
-                           │ gRPC (named pipe)              │ mémoire partagée
+                        LocalWorkerProvider ── starts Castor.AI.Worker.exe, supervises, restarts
+                           │ gRPC (named pipe)              │ shared memory
                            ▼                                ▼
-                        AiWorker.Session              régions vidéo + ring audio
+                        AiWorker.Session              video regions + audio ring
                            │
                            ▼
                         Castor.AI.Worker
                            │ SceneDecision, WorkerStats, WorkerLog
                            ▼
-                        événements AiClient ── Dispatch ──► thread UI Avalonia
+                        AiClient events ── Dispatch ──► Avalonia UI thread
 ```
 
-Référence complète : `Castor.AI.Dashboard/ViewModels/MainViewModel.cs`, qui n'utilise l'IA qu'à travers ce SDK,
-exactement comme Castor Studio.
+Full reference: `Castor.AI.Dashboard/ViewModels/MainViewModel.cs`, which only uses the AI through this SDK,
+exactly like Castor Studio.
 
-## 1. Référencer le SDK
+## 1. Reference the SDK
 
-Castor Studio référence le paquet `Castor.AI` (GitHub Packages `Castor-Studio`, `Castor.AI.Contracts` suit en
-dépendance) ; la source NuGet et le jeton sont décrits dans le
-[README du SDK](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#paquet-nuget).
+Castor Studio references the `Castor.AI` package (GitHub Packages `Castor-Studio`, `Castor.AI.Contracts`
+comes as a dependency); the NuGet source and token are described in the
+[SDK README](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#paquet-nuget).
 
 ```xml
 <PackageReference Include="Castor.AI" Version="1.0.0" />
 ```
 
-Dans ce repo, `Castor.AI.Dashboard` référence directement les projets.
+In this repository, `Castor.AI.Dashboard` references the projects directly.
 
-## 2. Enregistrer `AiClient` et le thread UI
+## 2. Register `AiClient` and the UI thread
 
-Les événements du SDK partent de ses propres threads (lecture du stream gRPC, supervision). Une app Avalonia
-ne peut toucher ses contrôles et ses propriétés bindées que depuis le thread UI : `AiClientOptions.Dispatch`
-redirige **tous** les événements vers lui.
+SDK events are raised from its own threads (gRPC stream reader, supervision). An Avalonia app can only touch
+its controls and bound properties from the UI thread: `AiClientOptions.Dispatch` routes **every** event to it.
 
-Avec l'injection de dépendances (Castor Studio) :
+With dependency injection (Castor Studio):
 
 ```csharp
 services.AddCastorAI(options =>
 {
     options.Worker = new LocalWorkerOptions
     {
-        // Worker livré dans ai/ à côté de l'app (voir « Déploiement »).
+        // Worker shipped in ai/ next to the app (see "Deployment").
         WorkerPath = Path.Combine(AppContext.BaseDirectory, "ai", "Castor.AI.Worker.exe"),
     };
     options.Client = new AiClientOptions { Dispatch = action => Dispatcher.UIThread.Post(action) };
 });
 ```
 
-`AddCastorAI` enregistre `LocalWorkerOptions`, `IAiProvider` (<xref:Castor.AI.Providers.Local.LocalWorkerProvider>)
-et `AiClient` en singletons : injecter `AiClient` dans le ViewModel.
+`AddCastorAI` registers `LocalWorkerOptions`, `IAiProvider` (<xref:Castor.AI.Providers.Local.LocalWorkerProvider>)
+and `AiClient` as singletons: inject `AiClient` into the ViewModel.
 
-Sans conteneur (`Castor.AI.Dashboard`) :
+Without a container (`Castor.AI.Dashboard`):
 
 ```csharp
 _ai = new AiClient(new LocalWorkerProvider(), new AiClientOptions { Dispatch = Ui });
@@ -73,21 +72,21 @@ private static void Ui(Action action)
 }
 ```
 
-Sans `WorkerPath`, le SDK cherche le worker dans `CASTOR_WORKER_PATH`, puis à côté de l'app, puis dans la sortie
-du projet `Castor.AI.Worker` (layout de dev `bin/<config>/<tfm>/`).
+Without `WorkerPath`, the SDK looks for the worker in `CASTOR_WORKER_PATH`, then next to the app, then in the
+output of the `Castor.AI.Worker` project (dev layout `bin/<config>/<tfm>/`).
 
-<xref:Castor.AI.Providers.Local.LocalWorkerOptions> :
+<xref:Castor.AI.Providers.Local.LocalWorkerOptions>:
 
-| Option | Défaut | Rôle |
+| Option | Default | Role |
 |---|---|---|
-| `WorkerPath` | recherche ci-dessus | Chemin de `Castor.AI.Worker.exe`. |
-| `ReadyTimeout` | 10 s | Attente de `Health = READY`, comptée depuis la dernière progression (un long téléchargement de modèle n'expire pas). |
-| `RestartBackoff` | 1 s, 2 s, 5 s | Délais avant de rouvrir une session après un crash ; le dernier se répète. |
-| `AudioRingSeconds` | 2 | Taille du ring audio en mémoire partagée. |
+| `WorkerPath` | lookup above | Path of `Castor.AI.Worker.exe`. |
+| `ReadyTimeout` | 10 s | Wait for `Health = READY`, counted from the last progress report (a long model download does not time out). |
+| `RestartBackoff` | 1 s, 2 s, 5 s | Delays before reopening a session after a crash; the last one repeats. |
+| `AudioRingSeconds` | 2 | Size of the shared memory audio ring. |
 
-## 3. S'abonner aux événements
+## 3. Subscribe to events
 
-À faire une fois, avant `StartAsync`. Avec `Dispatch`, les handlers tournent sur le thread UI.
+Do it once, before `StartAsync`. With `Dispatch`, handlers run on the UI thread.
 
 ```csharp
 _ai.StateChanged += (_, change) => AiStatusText = $"{change.State}: {change.Detail}";
@@ -98,25 +97,25 @@ _ai.StatsReceived += (_, stats) => UpdateGauges(stats);
 _ai.LogReceived += (_, entry) => AddLog(entry.Source, entry.Message);
 ```
 
-| Événement | Message worker d'origine | Usage dans l'app |
+| Event | Source worker message | Use in the app |
 |---|---|---|
-| `StateChanged` (<xref:Castor.AI.AiStateChange>) | `Health`, process, stream | Statut IA : `Starting` (avec la progression du téléchargement des modèles), `Running`, `Faulted`, `Restarting`, `Stopped`. |
-| `SessionStarted` (`WorkerCapabilities`) | `SessionAccepted` | Adapter l'UI : métriques, flags, payloads acceptés, `VideoFormat`. Relevé aussi après chaque redémarrage. |
-| `SuggestionReceived` (<xref:Castor.AI.AiSuggestion>) | `SceneDecision` | Mode Suggest : afficher caméra, confiance, raison. Mode Auto : `Verdict` dit si l'arbitre l'a prise. |
-| `OnAirChanged` (<xref:Castor.AI.AiOnAirChange>) | arbitre du SDK | `Source == Ai` : **l'app doit basculer** sur `CameraId`. `Initial`, `Manual` : information. |
-| `StatsReceived` (`WorkerStats`) | `WorkerStats` (toutes les 250 ms) | Jauges et graphes, clés décrites par `Capabilities.Metrics` et `CameraFlags`. |
-| `LogReceived` (<xref:Castor.AI.AiLogEntry>) | `WorkerLog`, `SessionError`, `SessionEnded`, stdout du worker | Panneau de logs. `Source` : `worker`, `local`, `audio` ou `client`. |
+| `StateChanged` (<xref:Castor.AI.AiStateChange>) | `Health`, process, stream | AI status: `Starting` (with model download progress), `Running`, `Faulted`, `Restarting`, `Stopped`. |
+| `SessionStarted` (`WorkerCapabilities`) | `SessionAccepted` | Adapt the UI: metrics, flags, accepted payloads, `VideoFormat`. Raised again after every restart. |
+| `SuggestionReceived` (<xref:Castor.AI.AiSuggestion>) | `SceneDecision` | Suggest mode: show camera, confidence, reason. Auto mode: `Verdict` says whether the arbiter took it. |
+| `OnAirChanged` (<xref:Castor.AI.AiOnAirChange>) | SDK arbiter | `Source == Ai`: **the app must switch** to `CameraId`. `Initial`, `Manual`: informational. |
+| `StatsReceived` (`WorkerStats`) | `WorkerStats` (every 250 ms) | Gauges and charts, keys described by `Capabilities.Metrics` and `CameraFlags`. |
+| `LogReceived` (<xref:Castor.AI.AiLogEntry>) | `WorkerLog`, `SessionError`, `SessionEnded`, worker stdout | Log panel. `Source`: `worker`, `local`, `audio` or `client`. |
 
-## 4. Démarrer une session
+## 4. Start a session
 
-Une caméra IA = une scène de Studio. L'`Id` est libre (ici le `Guid` de la scène) et revient tel quel dans les
+One AI camera = one Studio scene. The `Id` is free-form (here the scene `Guid`) and comes back as is in the
 suggestions.
 
 ```csharp
 var session = new AiSessionOptions
 {
-    Domain = "football",                                   // ou "podcast"
-    Mode = AiDecisionMode.Suggest,                          // ou Auto
+    Domain = "football",                                   // or "podcast"
+    Mode = AiDecisionMode.Suggest,                          // or Auto
     Cameras = scenes
         .Select(scene => new AiCamera(scene.Id.ToString("N"), scene.Name, Role: "", AudioChannel: -1))
         .ToList(),
@@ -130,58 +129,57 @@ try
 }
 catch (Exception ex)
 {
-    // Worker introuvable, pas READY à temps, ou session refusée (SessionError) : rester en manuel.
+    // Worker not found, not READY in time, or session refused (SessionError): stay manual.
     AiStatusText = ex.Message;
 }
 ```
 
-`StartAsync` lance le worker, attend `READY`, crée les régions de mémoire partagée, ouvre le stream et rend la
-main une fois `SessionAccepted` reçu. Une seule session à la fois : `RestartAsync(session)` quand la liste des
-caméras change (le worker repart de zéro), `StopAsync()` pour arrêter.
+`StartAsync` starts the worker, waits for `READY`, creates the shared memory regions, opens the stream and
+returns once `SessionAccepted` is received. One session at a time: `RestartAsync(session)` when the camera list
+changes (the worker starts from scratch), `StopAsync()` to stop.
 
-| Champ | Rôle |
+| Field | Role |
 |---|---|
-| `AiCamera.Role` | Indice de domaine (podcast : `host`, `guest`, `wide`, `host_zoom`...). Vide : le worker décide (labels). |
-| `AiCamera.AudioChannel` | Micro de la caméra dans `WriteAudio`, `-1` = aucun. |
-| `Mode` | `Suggest` : l'opérateur décide (mode « agent » de Studio). `Auto` : l'arbitre du SDK coupe (mode « auto »). |
-| `Arbiter` (<xref:Castor.AI.ArbiterOptions>) | Mode Auto : `MinConfidence` 0,5, `MaxDecisionAgeMs` 500, `ManualLockMs` 5 000, `DefaultMinHoldMs` 1 500. |
-| `Parameters` | Réglages du domaine, transmis tels quels dans `SessionStart.params`. |
+| `AiCamera.Role` | Domain hint (podcast: `host`, `guest`, `wide`, `host_zoom`...). Empty: the worker decides (labels). |
+| `AiCamera.AudioChannel` | Microphone of the camera in `WriteAudio`, `-1` = none. |
+| `Mode` | `Suggest`: the operator decides (Studio "agent" mode). `Auto`: the SDK arbiter cuts (Studio "auto" mode). |
+| `Arbiter` (<xref:Castor.AI.ArbiterOptions>) | Auto mode: `MinConfidence` 0.5, `MaxDecisionAgeMs` 500, `ManualLockMs` 5000, `DefaultMinHoldMs` 1500. |
+| `Parameters` | Domain tuning, forwarded as is in `SessionStart.params`. |
 
-## 5. Envoyer au worker
+## 5. Send to the worker
 
-Toutes ces méthodes sont thread-safe et non bloquantes ; sans session, elles ne font rien (ou renvoient `false`).
+All these methods are thread-safe and non-blocking; without a session they do nothing (or return `false`).
 
-### Ce qui est à l'antenne
+### What is on air
 
 ```csharp
-// À chaque coupe faite par l'opérateur, ou suggestion appliquée en mode Suggest.
+// On every cut made by the operator, or suggestion applied in Suggest mode.
 _ai.ReportOnAir(scene.Id.ToString("N"));
 ```
 
-**Obligatoire** : le worker raisonne sur le plan réellement à l'antenne (`CameraOnAir`). En mode Auto, un
-`ReportOnAir` verrouille aussi les coupes IA pendant `ManualLockMs`. Les coupes de l'arbitre sont déjà
-signalées au worker par le SDK.
+**Required**: the worker reasons about the shot really on air (`CameraOnAir`). In Auto mode, `ReportOnAir`
+also locks AI cuts for `ManualLockMs`. Cuts made by the arbiter are already reported to the worker by the SDK.
 
 ### Audio (podcast)
 
 ```csharp
-// Callback audio d'une source OBS (obs_source_add_audio_capture_callback), n'importe quel thread.
-_ai.WriteAudio(channel, monoSamples, sampleRate);   // float32 [-1, 1], 48 kHz OK : le SDK rééchantillonne en 16 kHz
+// Audio callback of an OBS source (obs_source_add_audio_capture_callback), any thread.
+_ai.WriteAudio(channel, monoSamples, sampleRate);   // float32 [-1, 1], 48 kHz is fine: the SDK resamples to 16 kHz
 ```
 
-Un canal par micro, relié à sa caméra par `AiCamera.AudioChannel`. Le SDK cadence l'audio en blocs de 32 ms,
-l'écrit dans le ring partagé et envoie `AudioReady`.
+One channel per microphone, tied to its camera by `AiCamera.AudioChannel`. The SDK paces the audio in 32 ms
+blocks, writes it to the shared ring and sends `AudioReady`.
 
-### Vidéo (football)
+### Video (football)
 
 ```csharp
-// Rendu brut BGRA d'une scène, un producteur par caméra.
+// Raw BGRA render of a scene, one producer per camera.
 _ai.WriteVideo(scene.Id.ToString("N"), bgra, width, height, stride);
 ```
 
-N'importe quelle taille : le SDK met à l'échelle vers `_ai.VideoFormat` (640x360 BGRA8, 15 fps pour le
-football) et jette les frames en avance. Produire directement à cette taille évite le coût de mise à l'échelle.
-`WriteVideo` renvoie `false` si la frame est jetée ; sans effet pour un worker sans vidéo (podcast).
+Any size: the SDK scales to `_ai.VideoFormat` (640x360 BGRA8, 15 fps for football) and drops frames that come
+too early. Producing frames at that size avoids the scaling cost. `WriteVideo` returns `false` when the frame
+is dropped; it has no effect for a worker without video (podcast).
 
 ### Payloads
 
@@ -194,22 +192,22 @@ _ai.SendPayload(PayloadTypes.CameraMetadata, cameraId, new Dictionary<string, ob
 _ai.SendPayload(PayloadTypes.SpeakerStart, cameraId);
 ```
 
-Types acceptés : `Capabilities.PayloadTypes` (constantes dans <xref:Castor.AI.Contracts.PayloadTypes>).
-Valeurs : `null`, `bool`, `string` ou nombre ; `camera_id` est ajouté quand `cameraId` est donné.
+Accepted types: `Capabilities.PayloadTypes` (constants in <xref:Castor.AI.Contracts.PayloadTypes>).
+Values: `null`, `bool`, `string` or a number; `camera_id` is added when `cameraId` is given.
 
-## 6. Réagir aux suggestions
+## 6. Handle suggestions
 
 ```csharp
 private void OnSuggestion(AiSuggestion suggestion)
 {
     if (suggestion.Verdict is null)
     {
-        // Suggest : proposer à l'opérateur ; s'il accepte, il coupe puis appelle ReportOnAir.
+        // Suggest: offer it to the operator; if accepted, the operator cuts, then the app calls ReportOnAir.
         ShowSuggestion(suggestion.CameraId, suggestion.Confidence, suggestion.Reason);
     }
     else if (!suggestion.Verdict.Accepted)
     {
-        // Auto : refusée par l'arbitre (périmée, confiance, min_hold, verrou manuel), debug seulement.
+        // Auto: rejected by the arbiter (stale, confidence, min_hold, manual lock), debug only.
         AddLog("arbiter", $"{suggestion.CameraId}: {suggestion.Verdict.Reason}");
     }
 }
@@ -218,41 +216,41 @@ private void OnAirChanged(AiOnAirChange change)
 {
     if (change.Source == AiOnAirSource.Ai)
     {
-        // Auto : l'arbitre a accepté, Studio bascule. Pas de ReportOnAir ici, le SDK l'a déjà signalé.
+        // Auto: the arbiter accepted, Studio switches. No ReportOnAir here, the SDK already reported it.
         _workspace.SelectScene(SceneById(Guid.ParseExact(change.CameraId, "N")));
     }
 }
 ```
 
-`AiSuggestion.LatencyMs` (réception − `SourcePtsUs`) et `ProcessingMs` servent au suivi de la latence
-(cible < 300 ms en local).
+`AiSuggestion.LatencyMs` (reception − `SourcePtsUs`) and `ProcessingMs` are used to track latency
+(target < 300 ms locally).
 
-## Cycle de vie et pannes
+## Lifecycle and failures
 
 ```
 Stopped ─StartAsync─► Starting ──SessionAccepted──► Running ──StopAsync──► Stopped
                          │                             │
-                    échec : exception             crash du worker, stream coupé
-                    de StartAsync, Faulted             ▼
+                    failure: StartAsync           worker crash, stream broken
+                    throws, Faulted                    ▼
                                                     Faulted ─► Restarting (1 s, 2 s, 5 s...) ─► Running
 ```
 
-- **Crash** : `LocalWorkerProvider` relance un worker neuf et rejoue la même session. `SessionStarted` est relevé
-  à nouveau et le SDK renvoie au nouveau worker le plan à l'antenne. L'app n'a rien à faire, sinon afficher l'état
-  et rester en manuel tant qu'il n'est pas `Running`.
-- **Démarrage long** : pendant le téléchargement des modèles, `StateChanged` remonte `Starting` avec la
-  progression (« downloading football/checkpoint_5_416.onnx 42 % ») : à afficher dans l'UI IA.
-- **Fermeture de l'app** : `StopAsync()` (ou `DisposeAsync()`) envoie `SessionStop` et libère les régions. Si l'app
-  meurt sans le faire, le worker s'arrête seul (`--parent-pid`).
+- **Crash**: `LocalWorkerProvider` starts a fresh worker and replays the same session. `SessionStarted` is raised
+  again and the SDK tells the new worker what is on air. The app has nothing to do, except show the state and
+  stay manual while it is not `Running`.
+- **Long startup**: while models download, `StateChanged` reports `Starting` with the progress
+  ("downloading football/checkpoint_5_416.onnx 42 %"): show it in the AI UI.
+- **App shutdown**: `StopAsync()` (or `DisposeAsync()`) sends `SessionStop` and releases the regions. If the app
+  dies without doing it, the worker stops on its own (`--parent-pid`).
 
-## Correspondance SDK ↔ contrat gRPC
+## SDK ↔ gRPC contract mapping
 
-| Côté app (`AiClient`) | Message du stream `Session` |
+| App side (`AiClient`) | `Session` stream message |
 |---|---|
-| `StartAsync` | `Health` jusqu'à `READY`, `GetCapabilities`, puis `ClientMessage.start` (`SessionStart`) |
-| `ReportOnAir`, coupe de l'arbitre | `ClientMessage.on_air` (`CameraOnAir`, `manual` vrai / faux) |
-| `WriteAudio` | ring audio partagé + `ClientMessage.audio` (`AudioReady`) |
-| `WriteVideo` | région vidéo de la caméra + `ClientMessage.video_frame` (`VideoFrameReady`) |
+| `StartAsync` | `Health` until `READY`, `GetCapabilities`, then `ClientMessage.start` (`SessionStart`) |
+| `ReportOnAir`, arbiter cut | `ClientMessage.on_air` (`CameraOnAir`, `manual` true / false) |
+| `WriteAudio` | shared audio ring + `ClientMessage.audio` (`AudioReady`) |
+| `WriteVideo` | camera video region + `ClientMessage.video_frame` (`VideoFrameReady`) |
 | `SendPayload` | `ClientMessage.payload` (`PayloadEvent`) |
 | `StopAsync` | `ClientMessage.stop` (`SessionStop`) |
 | `SuggestionReceived` | `WorkerMessage.decision` (`SceneDecision`) |
@@ -260,14 +258,14 @@ Stopped ─StartAsync─► Starting ──SessionAccepted──► Running ─�
 | `LogReceived` | `WorkerMessage.log`, `error`, `ended` |
 | `SessionStarted` | `WorkerMessage.accepted` (`SessionAccepted`) |
 
-Le diagramme de séquence complet est dans [Architecture, section 2](../architecture.md#2-cycle-de-vie-dune-session-local).
+The full sequence diagram is in [Architecture, section 2](../architecture.md#2-cycle-de-vie-dune-session-local).
 
-## Déploiement
+## Deployment
 
-Studio livre le worker dans `ai/` à côté de l'app. Chaque tag `v*.*.*` de ce repo publie
-`Castor.AI.Worker-<version>-win-x64.zip` (self-contained, sans modèle) et son `.sha256` en assets de la release
-GitHub (`.github/workflows/worker-release.yml`). **Toujours prendre le worker de la version de `Castor.AI`
-référencée par Studio** : ils partagent `castor_ai.proto` et les formats de mémoire partagée. Script de
-téléchargement et de vérification pour l'installeur : [README du SDK, « Déploiement »](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#déploiement).
+Studio ships the worker in `ai/` next to the app. Every `v*.*.*` tag of this repository publishes
+`Castor.AI.Worker-<version>-win-x64.zip` (self-contained, no models) and its `.sha256` as assets of the GitHub
+release (`.github/workflows/worker-release.yml`). **Always take the worker of the `Castor.AI` version
+referenced by Studio**: they share `castor_ai.proto` and the shared memory layouts. Download and verification
+script for the installer: [SDK README, "Déploiement"](https://github.com/Castor-Studio/Castor-AI-Worker/blob/main/Castor.AI/README.md#déploiement).
 
-Les modèles ne sont pas dans l'installeur : le worker télécharge au premier lancement ceux de son domaine.
+Models are not in the installer: on first launch, the worker downloads the ones of its domain.

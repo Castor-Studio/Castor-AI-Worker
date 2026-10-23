@@ -1,8 +1,8 @@
-- name: Vue d'ensemble
+- name: Overview
   href: ../index.md
-- name: Fonctionnement du worker
+- name: How the worker works
   href: worker.md
-- name: Communiquer depuis l'app Avalonia
+- name: Talking to the worker from Avalonia
   href: avalonia.md
-- name: Architecture et formats
+- name: Architecture and formats
   href: ../architecture.md
