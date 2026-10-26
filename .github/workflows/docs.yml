@@ -1,0 +1,43 @@
+name: Documentation
+
+# Runs once per pull request, not on every push, to save Actions minutes.
+# Re-run manually from the Actions tab (workflow_dispatch) after later changes.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    paths:
+      - 'Castor.AI/**'
+      - 'Castor.AI.Contracts/**'
+      - 'docs/**'
+      - 'eng/**'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Build only: the site is not hosted, members build it locally with eng/Build-Docs.ps1.
+      - name: Build documentation
+        shell: pwsh
+        run: ./eng/Build-Docs.ps1 -WarningsAsErrors
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: castor-ai-docs
+          path: docs/_site
+          retention-days: 14

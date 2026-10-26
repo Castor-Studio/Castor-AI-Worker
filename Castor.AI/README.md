@@ -1,54 +1,54 @@
 # Castor.AI
 
-SDK client de l'IA de réalisation pour Castor Studio : il démarre un worker IA, lui envoie les caméras,
-l'audio et les indications de l'app, et remonte les plans suggérés. Aucune dépendance UI (pas d'Avalonia).
+Client SDK of the Castor Studio directing AI: it starts an AI worker, sends it the cameras, the audio and the
+app hints, and surfaces the suggested shots. No UI dependency (no Avalonia).
 
 ```
-Castor.AI            ← référencé par l'app (Castor Studio, Castor.AI.Dashboard)
-  └ Castor.AI.Contracts   contrat gRPC + format mémoire partagée (partagé avec les workers)
-Castor.AI.Worker     ← exécutable lancé par le SDK (un domaine par process : podcast, ...)
+Castor.AI            ← referenced by the app (Castor Studio, Castor.AI.Dashboard)
+  └ Castor.AI.Contracts   gRPC contract + shared memory layout (shared with the workers)
+Castor.AI.Worker     ← executable started by the SDK (one domain per process: podcast, ...)
 ```
 
-## API en bref
+## API at a glance
 
-| Type | Rôle |
+| Type | Role |
 |---|---|
-| `AiClient` | Point d'entrée. Une session à la fois. Thread-safe. |
-| `AiSessionOptions` | Domaine, caméras, paramètres du domaine, mode, règles de l'arbitre. |
-| `AiCamera(Id, Label, Role, AudioChannel)` | Une caméra (une scène dans Studio). `Id` libre, renvoyé tel quel dans les suggestions. |
-| `AiDecisionMode.Suggest` / `Auto` | Suggest : l'app affiche, l'opérateur décide (mode « agent »). Auto : l'arbitre du SDK coupe (mode « auto »). |
-| `AiSuggestion` | Plan suggéré : caméra, confiance, raison, latence, scores, verdict de l'arbitre (Auto). |
-| `AiOnAirChange` | Ce qui est à l'antenne a changé : `Initial`, `Ai` (Auto, l'app doit basculer), `Manual`. |
-| `LocalWorkerProvider` | Le worker tourne en local (process enfant, gRPC sur named pipe, audio et vidéo en mémoire partagée). |
+| `AiClient` | Entry point. One session at a time. Thread-safe. |
+| `AiSessionOptions` | Domain, cameras, domain parameters, mode, arbiter rules. |
+| `AiCamera(Id, Label, Role, AudioChannel)` | A camera (a scene in Studio). Free-form `Id`, echoed back as is in the suggestions. |
+| `AiDecisionMode.Suggest` / `Auto` | Suggest: the app shows, the operator decides ("agent" mode). Auto: the SDK arbiter cuts ("auto" mode). |
+| `AiSuggestion` | Suggested shot: camera, confidence, reason, latency, scores, arbiter verdict (Auto). |
+| `AiOnAirChange` | What is on air changed: `Initial`, `Ai` (Auto, the app must switch), `Manual`. |
+| `LocalWorkerProvider` | The worker runs locally (child process, gRPC over named pipe, audio and video in shared memory). |
 
-Méthodes de `AiClient` :
+`AiClient` methods:
 
-- `StartAsync(session)`, `StopAsync()`, `RestartAsync(session)` (changement de caméras : le worker repart de zéro) ;
-- `ReportOnAir(cameraId)` : **à appeler à chaque coupe faite par l'app ou l'opérateur** (le worker raisonne sur le plan courant ; en Auto, ça verrouille les coupes IA pendant `ManualLockMs`) ;
-- `WriteAudio(channel, samples, sampleRate)` : audio d'un micro, mono float32, n'importe quel taux, n'importe quel thread (rééchantillonné en 16 kHz et cadencé par le SDK) ;
-- `WriteVideo(cameraId, bgra, width, height, stride)` : frame d'une caméra, BGRA8, n'importe quelle taille, n'importe quel thread (un producteur par caméra) ; mise à la taille de `VideoFormat` et limitée à son fps par le SDK. Sans effet si le worker ne lit pas de vidéo (podcast) ;
-- `SendPayload(type, cameraId, fields)` : indications propres au domaine (types listés dans `Capabilities.PayloadTypes`).
+- `StartAsync(session)`, `StopAsync()`, `RestartAsync(session)` (camera change: the worker starts from scratch);
+- `ReportOnAir(cameraId)`: **call it on every cut made by the app or the operator** (the worker reasons about the current shot; in Auto, it locks AI cuts for `ManualLockMs`);
+- `WriteAudio(channel, samples, sampleRate)`: audio of one microphone, mono float32, any rate, any thread (resampled to 16 kHz and paced by the SDK);
+- `WriteVideo(cameraId, bgra, width, height, stride)`: frame of one camera, BGRA8, any size, any thread (one producer per camera); scaled to `VideoFormat` and limited to its fps by the SDK. No effect if the worker reads no video (podcast);
+- `SendPayload(type, cameraId, fields)`: domain-specific hints (types listed in `Capabilities.PayloadTypes`).
 
-Événements : `SuggestionReceived`, `OnAirChanged`, `StateChanged` (dont redémarrage automatique après crash du worker),
-`SessionStarted`, `StatsReceived` (métriques décrites par `Capabilities.Metrics`), `LogReceived`.
-Ils sont levés via `AiClientOptions.Dispatch` s'il est fourni (sinon sur un thread du SDK).
+Events: `SuggestionReceived`, `OnAirChanged`, `StateChanged` (including automatic restart after a worker crash),
+`SessionStarted`, `StatsReceived` (metrics described by `Capabilities.Metrics`), `LogReceived`.
+They are raised through `AiClientOptions.Dispatch` when provided (otherwise on an SDK thread).
 
-## Paquet NuGet
+## NuGet package
 
-`Castor.AI` et `Castor.AI.Contracts` sont publiés sur GitHub Packages (`Castor-Studio`) par
-`.github/workflows/nuget-publish.yml` à chaque tag `v*.*.*` (version du paquet = tag sans le `v`) :
+`Castor.AI` and `Castor.AI.Contracts` are published to GitHub Packages (`Castor-Studio`) by
+`.github/workflows/nuget-publish.yml` on every `v*.*.*` tag (package version = tag without the `v`):
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Le même tag publie aussi l'exécutable du worker en asset de la release GitHub du tag
-(`.github/workflows/worker-release.yml`, voir « Déploiement »).
+The same tag also publishes the worker executable as an asset of the tag's GitHub release
+(`.github/workflows/worker-release.yml`, see "Deployment").
 
-Sur les PR vers `main` / `dev`, `.github/workflows/ci.yml` teste et emballe seulement (paquets en artifact, version `0.0.0-ci.<run>`).
+On PRs to `main` / `dev`, `.github/workflows/ci.yml` only tests and packs (packages as an artifact, version `0.0.0-ci.<run>`).
 
-Côté Castor Studio, ajouter la source dans `nuget.config` :
+On the Castor Studio side, add the source in `nuget.config`:
 
 ```xml
 <packageSources>
@@ -62,30 +62,30 @@ Côté Castor Studio, ajouter la source dans `nuget.config` :
 </packageSourceCredentials>
 ```
 
-`GITHUB_TOKEN` : en local un PAT avec `read:packages`, en CI le `GITHUB_TOKEN` du workflow
-(`permissions: packages: read`). Puis référencer seulement `Castor.AI` (`Castor.AI.Contracts` suit en dépendance) :
+`GITHUB_TOKEN`: locally a PAT with `read:packages`, in CI the workflow `GITHUB_TOKEN`
+(`permissions: packages: read`). Then reference only `Castor.AI` (`Castor.AI.Contracts` comes as a dependency):
 
 ```xml
 <PackageReference Include="Castor.AI" Version="1.0.0" />
 ```
 
-## Intégration dans Castor Studio
+## Castor Studio integration
 
-### 1. Enregistrement (`ServiceCollectionExtensions.AddCommonServices`)
+### 1. Registration (`ServiceCollectionExtensions.AddCommonServices`)
 
 ```csharp
 services.AddCastorAI(options =>
 {
     options.Worker = new LocalWorkerOptions
     {
-        // Worker + packs/ de modèles livrés à côté de l'app (voir « Déploiement »).
+        // Worker + model packs/ shipped next to the app (see "Deployment").
         WorkerPath = Path.Combine(AppContext.BaseDirectory, "ai", "Castor.AI.Worker.exe"),
     };
     options.Client = new AiClientOptions { Dispatch = action => Dispatcher.UIThread.Post(action) };
 });
 ```
 
-`AiClient` est alors un singleton injectable (remplace `IAiAnalysisClient` / `GrpcAiAnalysisClient`).
+`AiClient` is then an injectable singleton (replaces `IAiAnalysisClient` / `GrpcAiAnalysisClient`).
 
 ### 2. Session (`MulticamViewModel.StartAiAsync`)
 
@@ -95,32 +95,32 @@ var session = new AiSessionOptions
     Domain = GetSelectedModuleName(),                     // "podcast", "football"
     Mode = mode == "auto" ? AiDecisionMode.Auto : AiDecisionMode.Suggest,
     Cameras = selectedScenes
-        .Select(scene => new AiCamera(scene.Id.ToString("N"), scene.Name /*, role, micro */))
+        .Select(scene => new AiCamera(scene.Id.ToString("N"), scene.Name /*, role, microphone */))
         .ToList(),
     InitialCameraId = _workspace.SelectedScene?.Id.ToString("N"),
 };
 await _ai.StartAsync(session);
 ```
 
-### 3. Réagir
+### 3. React
 
 ```csharp
 _ai.SuggestionReceived += (_, suggestion) =>
 {
-    // Mode agent : afficher la suggestion (scène, confiance, raison).
+    // Agent mode: show the suggestion (scene, confidence, reason).
     if (suggestion.Verdict is null) ShowSuggestion(suggestion.CameraId, suggestion.Confidence);
 };
 
 _ai.OnAirChanged += (_, change) =>
 {
-    // Mode auto : l'arbitre a accepté, Studio bascule.
+    // Auto mode: the arbiter accepted, Studio switches.
     if (change.Source == AiOnAirSource.Ai) _workspace.SelectScene(SceneById(Guid.ParseExact(change.CameraId, "N")));
 };
 
 _ai.StateChanged += (_, change) => AiStatusText = $"{change.State}: {change.Detail}";
 ```
 
-Et à chaque changement de scène fait par l'opérateur (ou suggestion appliquée en mode agent) :
+And on every scene change made by the operator (or suggestion applied in agent mode):
 
 ```csharp
 _ai.ReportOnAir(scene.Id.ToString("N"));
@@ -128,44 +128,44 @@ _ai.ReportOnAir(scene.Id.ToString("N"));
 
 ### 4. Audio
 
-Un canal par micro. `AiCamera.AudioChannel` relie la caméra à son micro. Studio branche le callback audio
-de chaque source OBS concernée (`obs_source_add_audio_capture_callback`) :
+One channel per microphone. `AiCamera.AudioChannel` ties the camera to its microphone. Studio hooks the audio
+callback of each relevant OBS source (`obs_source_add_audio_capture_callback`):
 
 ```csharp
-_ai.WriteAudio(channel, monoSamples, sampleRate);   // 48 kHz OBS → 16 kHz fait par le SDK
+_ai.WriteAudio(channel, monoSamples, sampleRate);   // OBS 48 kHz → 16 kHz done by the SDK
 ```
 
-Sans audio (`AudioChannel = -1` partout), le worker podcast se contente des payloads `speaker.*` / `camera.metadata`.
+Without audio (`AudioChannel = -1` everywhere), the podcast worker relies on the `speaker.*` / `camera.metadata` payloads only.
 
-### 5. Vidéo (football)
+### 5. Video (football)
 
-Le worker football lit une frame par caméra. `AiClient.VideoFormat` donne la taille voulue (640x360 BGRA, 15 fps) :
-produire directement à cette taille évite la mise à l'échelle du SDK.
+The football worker reads one frame per camera. `AiClient.VideoFormat` gives the wanted size (640x360 BGRA, 15 fps):
+producing frames directly at that size avoids the SDK scaling.
 
 ```csharp
-// Pour chaque scène de la session, depuis un callback vidéo brut OBS (BGRA) :
+// For each scene of the session, from a raw OBS video callback (BGRA):
 _ai.WriteVideo(scene.Id.ToString("N"), bgra, width, height, linesize);
 ```
 
-Aujourd'hui Studio pousse un flux encodé par scène vers une URL (`LibObsAiSceneStreamRuntime`) : en local il faut
-à la place un rendu brut par scène (sortie vidéo indépendante + `obs_add_raw_video_callback` ou équivalent).
+Today Studio pushes one encoded stream per scene to a URL (`LibObsAiSceneStreamRuntime`): locally it needs
+a raw render per scene instead (independent video output + `obs_add_raw_video_callback` or equivalent).
 
-### Déploiement
+### Deployment
 
-Le SDK lance `Castor.AI.Worker.exe`. Studio livre le worker dans un dossier `ai/` à côté de l'app
-(`LocalWorkerOptions.WorkerPath`, voir l'enregistrement plus haut).
+The SDK starts `Castor.AI.Worker.exe`. Studio ships the worker in an `ai/` folder next to the app
+(`LocalWorkerOptions.WorkerPath`, see the registration above).
 
-Chaque tag `v*.*.*` de ce repo crée une release GitHub avec deux assets (`.github/workflows/worker-release.yml`) :
+Every `v*.*.*` tag of this repository creates a GitHub release with two assets (`.github/workflows/worker-release.yml`):
 
-| Asset | Contenu |
+| Asset | Content |
 |---|---|
-| `Castor.AI.Worker-<version>-win-x64.zip` | `dotnet publish -r win-x64 --self-contained` : `Castor.AI.Worker.exe`, runtime .NET et DLL natives ONNX Runtime. Aucun runtime à installer sur la machine. Sans modèle. |
-| `Castor.AI.Worker-<version>-win-x64.zip.sha256` | `<sha256>  <fichier>` (format `sha256sum`). |
+| `Castor.AI.Worker-<version>-win-x64.zip` | `dotnet publish -r win-x64 --self-contained`: `Castor.AI.Worker.exe`, .NET runtime and ONNX Runtime native DLLs. No runtime to install on the machine. No models. |
+| `Castor.AI.Worker-<version>-win-x64.zip.sha256` | `<sha256>  <file>` (`sha256sum` format). |
 
-`<version>` = tag sans le `v`, la même que le paquet `Castor.AI` du tag. **Toujours prendre le worker de la version
-de `Castor.AI` référencée par Studio** : ils partagent `castor_ai.proto` et les formats de mémoire partagée.
+`<version>` = tag without the `v`, the same as the tag's `Castor.AI` package. **Always take the worker of the
+`Castor.AI` version referenced by Studio**: they share `castor_ai.proto` and the shared memory layouts.
 
-Dans le pipeline de build / installeur de Studio (PowerShell, version lue depuis la `PackageReference` de `Castor.AI`) :
+In the Studio build / installer pipeline (PowerShell, version read from the `Castor.AI` `PackageReference`):
 
 ```powershell
 $version = "1.0.0"
@@ -173,23 +173,23 @@ $asset = "Castor.AI.Worker-$version-win-x64.zip"
 gh release download "v$version" --repo Castor-Studio/Castor-AI-Worker --pattern "$asset*" --dir build/ai
 $expected = (Get-Content "build/ai/$asset.sha256").Split(" ")[0]
 $actual = (Get-FileHash "build/ai/$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw "$asset : SHA-256 $actual, attendu $expected" }
-Expand-Archive "build/ai/$asset" -DestinationPath <sortie de l'app>/ai -Force
+if ($actual -ne $expected) { throw "${asset}: SHA-256 $actual, expected $expected" }
+Expand-Archive "build/ai/$asset" -DestinationPath <app output>/ai -Force
 ```
 
-Sans `gh`, l'URL directe est `https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/v<version>/<asset>`
-(repo privé : jeton avec accès en lecture au repo, `gh` le gère).
+Without `gh`, the direct URL is `https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/v<version>/<asset>`
+(private repository: token with read access to the repository, `gh` handles it).
 
-Pas de modèle dans l'installeur : le worker télécharge au démarrage ceux de son domaine qui manquent
-(voir `docs/architecture.md`, section 9). Pendant le téléchargement, `StateChanged` remonte
-`Starting` avec la progression (« downloading football/checkpoint_5_416.onnx 42 % ... ») : à afficher dans l'UI IA.
-`LocalWorkerOptions.ReadyTimeout` compte depuis la dernière progression, un long téléchargement n'expire donc pas.
+No models in the installer: at startup, the worker downloads the missing ones of its domain
+(see `docs/architecture.md`, section 9). During the download, `StateChanged` reports
+`Starting` with the progress ("downloading football/checkpoint_5_416.onnx 42 % ..."): show it in the AI UI.
+`LocalWorkerOptions.ReadyTimeout` counts from the last progress report, so a long download does not time out.
 
-Le worker s'arrête tout seul si Studio meurt (surveillance du PID parent).
+The worker stops on its own if Studio dies (parent PID watchdog).
 
-## Ce qui reste côté Studio
+## Left to do on the Studio side
 
-- UI de choix du micro par scène (`AudioChannel`) et, pour le podcast, du rôle (`Role`) ;
-- capture audio OBS par micro vers `WriteAudio` ;
-- rendu brut par scène vers `WriteVideo` (football) ;
-- téléchargement du zip du worker (version de `Castor.AI`) dans l'installeur, voir « Déploiement ».
+- UI to pick the microphone per scene (`AudioChannel`) and, for the podcast, the role (`Role`);
+- OBS audio capture per microphone to `WriteAudio`;
+- raw render per scene to `WriteVideo` (football);
+- download of the worker zip (version of `Castor.AI`) in the installer, see "Deployment".

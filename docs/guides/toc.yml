@@ -1,0 +1,8 @@
+- name: Overview
+  href: ../index.md
+- name: How the worker works
+  href: worker.md
+- name: Talking to the worker from Avalonia
+  href: avalonia.md
+- name: Architecture and formats
+  href: ../architecture.md
