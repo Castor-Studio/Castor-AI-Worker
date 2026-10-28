@@ -21,6 +21,15 @@ Castor.AI.Worker     ← exécutable lancé par le SDK (un domaine par process :
 | `AiOnAirChange` | Ce qui est à l'antenne a changé : `Initial`, `Ai` (Auto, l'app doit basculer), `Manual`. |
 | `LocalWorkerProvider` | Le worker tourne en local (process enfant, gRPC sur named pipe, audio et vidéo en mémoire partagée). |
 
+`LocalWorkerOptions.Device` vaut `"gpu"` par défaut : DirectML sous Windows, avec repli CPU
+et avertissement si l'initialisation GPU échoue. Utiliser `"cpu"` pour forcer le CPU :
+`new LocalWorkerProvider(new LocalWorkerOptions { Device = "cpu" })`.
+Pour cibler un adaptateur DirectML précis, définir `GpuAdapter` (indice DXGI, 0 par défaut),
+par exemple `new LocalWorkerOptions { GpuAdapter = 1 }`.
+Le worker journalise le fournisseur activé par modèle. Les opérateurs non pris en charge par
+DirectML peuvent rester sur CPU. Le petit modèle Silero peut être plus rapide en CPU ;
+voir les mesures dans [l'architecture](../docs/architecture.md).
+
 Méthodes de `AiClient` :
 
 - `StartAsync(session)`, `StopAsync()`, `RestartAsync(session)` (changement de caméras : le worker repart de zéro) ;
