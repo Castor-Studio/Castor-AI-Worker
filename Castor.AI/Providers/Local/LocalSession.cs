@@ -61,7 +61,11 @@ internal sealed class LocalSession : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var pipeName = $"castor-ai-{Guid.NewGuid():N}";
-        var process = StartWorker(WorkerLocator.Find(options.WorkerPath), config.Domain, pipeName, onLog);
+        if (options.Device is not ("cpu" or "gpu"))
+            throw new ArgumentException("Device must be 'cpu' or 'gpu'.", nameof(options));
+        if (options.GpuAdapter < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "GPU adapter must be non-negative.");
+        var process = StartWorker(WorkerLocator.Find(options.WorkerPath), config.Domain, pipeName, options.Device, options.GpuAdapter, onLog);
         var session = new LocalSession(options, process, pipeName);
         try
         {
@@ -169,7 +173,7 @@ internal sealed class LocalSession : IAsyncDisposable
         _completion.TrySetResult(null);
     }
 
-    private static Process StartWorker(string workerPath, string domain, string pipeName, Action<string> onLog)
+    private static Process StartWorker(string workerPath, string domain, string pipeName, string device, int gpuAdapter, Action<string> onLog)
     {
         var startInfo = new ProcessStartInfo(workerPath)
         {
@@ -180,6 +184,10 @@ internal sealed class LocalSession : IAsyncDisposable
         };
         startInfo.ArgumentList.Add("--domain");
         startInfo.ArgumentList.Add(domain);
+        startInfo.ArgumentList.Add("--device");
+        startInfo.ArgumentList.Add(device);
+        startInfo.ArgumentList.Add("--gpu-adapter");
+        startInfo.ArgumentList.Add(gpuAdapter.ToString(System.Globalization.CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("--pipe");
         startInfo.ArgumentList.Add(pipeName);
         startInfo.ArgumentList.Add("--parent-pid");

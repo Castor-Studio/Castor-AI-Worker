@@ -2,6 +2,12 @@ namespace Castor.AI.Providers.Local;
 
 public sealed record LocalWorkerOptions
 {
+    /// <summary>"gpu" (default): DirectML on Windows with CPU fallback; "cpu": force CPU.</summary>
+    public string Device { get; set; } = "gpu";
+
+    /// <summary>DirectML/DXGI adapter index for new worker sessions. 0 is the default display adapter.</summary>
+    public int GpuAdapter { get; set; }
+
     /// <summary>
     /// Worker executable. Null: <c>CASTOR_WORKER_PATH</c>, then <c>Castor.AI.Worker.exe</c> next to the app,
     /// then the sibling project output (dev layout).

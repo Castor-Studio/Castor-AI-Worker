@@ -13,7 +13,21 @@ namespace Castor.AI.Worker.Tests.Audio;
 [SupportedOSPlatform("windows")] // System.Speech TTS
 public sealed class SileroVadModelTests : IDisposable
 {
-    private readonly SileroVadModel _model = new(TestModels.Path(ModelCatalog.SileroVad));
+    private readonly SileroVadModel _model = new(TestModels.Path(ModelCatalog.SileroVad), TestModels.Sessions);
+
+    public SileroVadModelTests() => TestModels.CheckProvider(_model.ExecutionProvider);
+
+    [Fact]
+    public void Probabilities_match_cpu_within_tolerance()
+    {
+        using var cpu = new SileroVadModel(TestModels.Path(ModelCatalog.SileroVad), new OnnxSessionFactory("cpu"));
+        var reference = cpu.CreateStream();
+        var actual = _model.CreateStream();
+        var samples = Synthesize("Bonjour et bienvenue dans ce podcast.")
+            .Concat(new float[SileroVadModel.SampleRate]).ToArray();
+        foreach (var chunk in Chunks(samples))
+            Assert.InRange(Math.Abs(reference.Process(chunk) - actual.Process(chunk)), 0, 0.005f);
+    }
 
     [Fact]
     public void Digital_silence_is_not_speech()

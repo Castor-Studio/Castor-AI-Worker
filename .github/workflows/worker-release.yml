@@ -37,7 +37,7 @@ jobs:
       - name: Smoke test
         run: |
           test -f out/worker/onnxruntime.dll
-          test -f out/worker/onnxruntime_providers_shared.dll
+          test -f out/worker/DirectML.dll
           set +e
           ./out/worker/Castor.AI.Worker.exe --domain smoke-test
           code=$?
