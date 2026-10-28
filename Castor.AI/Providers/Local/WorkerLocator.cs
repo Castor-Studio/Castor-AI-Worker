@@ -4,7 +4,7 @@ namespace Castor.AI.Providers.Local;
 /// Finds the worker executable: <see cref="LocalWorkerOptions.WorkerPath"/>, <c>CASTOR_WORKER_PATH</c>,
 /// next to the app, or the sibling project output in the dev layout (&lt;project&gt;/bin/&lt;config&gt;/&lt;tfm&gt;/).
 /// </summary>
-internal static class WorkerLocator
+public static class WorkerLocator
 {
     private const string EnvironmentVariable = "CASTOR_WORKER_PATH";
     private const string ProjectName = "Castor.AI.Worker";

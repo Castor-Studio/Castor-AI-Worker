@@ -9,6 +9,7 @@ using Castor.AI.Providers;
 using Castor.AI.Providers.Local;
 using Castor.AI.Dashboard.Audio;
 using Castor.AI.Dashboard.Charts;
+using Castor.AI.Dashboard.Diagnostics;
 using Castor.AI.Dashboard.Profiles;
 using Castor.AI.Dashboard.Video;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -37,14 +38,22 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
     private readonly DispatcherTimer _uiTimer;
     private readonly LatencyWindow _latency = new(30);
     private readonly List<(ChartModel Chart, MetricDescriptor Metric)> _metricCharts = [];
+    private readonly LocalWorkerOptions _workerOptions;
+    private CancellationTokenSource? _diagnosticsCts;
     private int _accepted;
     private int _rejected;
     private int _suggested;
 
-    public MainViewModel()
+    public MainViewModel(LocalWorkerOptions? workerOptions = null)
     {
+        _workerOptions = workerOptions ?? new LocalWorkerOptions();
+        _selectedDevice = _workerOptions.Device;
+        GpuAdapters = LoadGpuAdapters();
+        _selectedGpuAdapterChoice = GpuAdapters.FirstOrDefault(adapter => adapter.Index == _workerOptions.GpuAdapter)
+            ?? GpuAdapters[0];
+        _workerOptions.GpuAdapter = _selectedGpuAdapterChoice.Index;
         // Everything AI goes through the Castor.AI SDK, exactly like Castor Studio will.
-        _ai = new AiClient(new LocalWorkerProvider(), new AiClientOptions { Dispatch = Ui });
+        _ai = new AiClient(new LocalWorkerProvider(_workerOptions), new AiClientOptions { Dispatch = Ui });
         _ai.StateChanged += (_, change) =>
         {
             ProviderState = change.State.ToString();
@@ -80,6 +89,128 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
     public ObservableCollection<OnAirItem> OnAirHistory { get; } = [];
 
     public ObservableCollection<LogItem> Logs { get; } = [];
+
+    public ObservableCollection<LogItem> FilteredLogs { get; } = [];
+
+    public string CopyableLogs => string.Join(Environment.NewLine, FilteredLogs.Select(entry => entry.DisplayText));
+
+    public ObservableCollection<DeviceDiagnosticResult> DeviceDiagnostics { get; } = [];
+
+    public IReadOnlyList<string> InferenceDevices { get; } = ["gpu", "cpu"];
+
+    [ObservableProperty]
+    private string _selectedDevice = "gpu";
+
+    partial void OnSelectedDeviceChanged(string value)
+    {
+        if (value is not ("cpu" or "gpu")) return;
+        _workerOptions.Device = value;
+        AddLog("app", $"Mode des prochaines sessions : {value.ToUpperInvariant()}");
+    }
+
+    public IReadOnlyList<GpuAdapterChoice> GpuAdapters { get; }
+
+    [ObservableProperty]
+    private GpuAdapterChoice? _selectedGpuAdapterChoice;
+
+    partial void OnSelectedGpuAdapterChoiceChanged(GpuAdapterChoice? value)
+    {
+        if (value is null) return;
+        _workerOptions.GpuAdapter = value.Index;
+        AddLog("app", $"Adaptateur GPU des prochaines sessions : {value.Label}");
+    }
+
+    private static IReadOnlyList<GpuAdapterChoice> LoadGpuAdapters()
+    {
+        try
+        {
+            var adapters = DxgiAdapterCatalog.Enumerate()
+                .Select(adapter => new GpuAdapterChoice(adapter.Index, adapter.Name))
+                .ToArray();
+            if (adapters.Length > 0) return adapters;
+        }
+        catch (Exception)
+        {
+            // Keep the dashboard usable when DXGI enumeration is unavailable.
+        }
+
+        return [new GpuAdapterChoice(0, "GPU par défaut")];
+    }
+
+    public bool CanSelectDevice => !IsRunning && !IsDiagnosticsRunning;
+
+    [ObservableProperty]
+    private string _diagnosticsStatus = "Prêt à vérifier YOLO et Silero en CPU et GPU.";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunDiagnosticsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelDiagnosticsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    [NotifyPropertyChangedFor(nameof(CanSelectDevice))]
+    private bool _isDiagnosticsRunning;
+
+    private bool CanRunDiagnostics() => !IsRunning && !IsDiagnosticsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanRunDiagnostics))]
+    private async Task RunDiagnosticsAsync()
+    {
+        DeviceDiagnostics.Clear();
+        _diagnosticsCts = new CancellationTokenSource();
+        IsDiagnosticsRunning = true;
+        DiagnosticsStatus = "Vérification en cours… les modèles manquants seront téléchargés.";
+        AddLog("diagnostics", "Lancement des vérifications CPU/GPU.");
+        try
+        {
+            var results = await WorkerDiagnosticsRunner.RunAsync(_workerOptions.WorkerPath, _workerOptions.GpuAdapter,
+                line => Ui(() => AddLog("diagnostics", line)), _diagnosticsCts.Token);
+            foreach (var result in results)
+                DeviceDiagnostics.Add(result);
+
+            var mismatches = results.Count(result => result.OutputComparison == "Écart CPU/GPU");
+            var gpuFallback = results.Any(result => result.RequestedDevice == "gpu" && result.Provider == "CPUExecutionProvider");
+            DiagnosticsStatus = mismatches > 0
+                ? $"Terminé avec {mismatches} écart(s) entre CPU et GPU. Consultez les logs."
+                : gpuFallback
+                    ? "Terminé avec repli CPU : DirectML n’a pas pu être initialisé. Consultez Logs pour la cause."
+                    : "Vérifications CPU/GPU terminées avec des sorties conformes.";
+            AddLog("diagnostics", DiagnosticsStatus);
+        }
+        catch (OperationCanceledException)
+        {
+            DiagnosticsStatus = "Vérification annulée.";
+            AddLog("diagnostics", DiagnosticsStatus);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsStatus = $"Échec du diagnostic : {ex.Message}";
+            AddLog("diagnostics", DiagnosticsStatus);
+        }
+        finally
+        {
+            _diagnosticsCts?.Dispose();
+            _diagnosticsCts = null;
+            IsDiagnosticsRunning = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(IsDiagnosticsRunning))]
+    private void CancelDiagnostics() => _diagnosticsCts?.Cancel();
+
+    [ObservableProperty]
+    private string _logSearchText = "";
+
+    partial void OnLogSearchTextChanged(string value) => RefreshLogs();
+
+    private void RefreshLogs()
+    {
+        FilteredLogs.Clear();
+        var query = LogSearchText.Trim();
+        foreach (var entry in Logs.Where(entry =>
+                     entry.Time.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                     entry.Source.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                     entry.Text.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            FilteredLogs.Add(entry);
+    }
 
     public TimelineModel Timeline { get; } = new();
 
@@ -152,7 +283,9 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     [NotifyCanExecuteChangedFor(nameof(SendPayloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RunDiagnosticsCommand))]
     [NotifyPropertyChangedFor(nameof(IsIdle))]
+    [NotifyPropertyChangedFor(nameof(CanSelectDevice))]
     private bool _isRunning;
 
     public bool IsIdle => !IsRunning;
@@ -163,6 +296,7 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
     public void Shutdown()
     {
         _uiTimer.Stop();
+        _diagnosticsCts?.Cancel();
         StopAudioSources();
         StopVideoSources();
         Task.Run(() => _ai.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(3));
@@ -268,7 +402,7 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
         SelectedPayloadTarget = NoCamera;
     }
 
-    private bool CanStart() => !IsRunning && SelectedProfile is not null;
+    private bool CanStart() => !IsRunning && !IsDiagnosticsRunning && SelectedProfile is not null;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
@@ -280,6 +414,8 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
         IsRunning = true;
         ResetLiveViews();
+        AddLog("app", $"Démarrage de la session {profile.Domain} sur {_workerOptions.Device.ToUpperInvariant()}" +
+            (_workerOptions.Device == "gpu" ? $" ({SelectedGpuAdapterChoice?.Label})" : ""));
 
         var session = new AiSessionOptions
         {
@@ -674,8 +810,11 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     private IBrush Brush(string cameraId) => Find(cameraId)?.Color ?? NeutralBrush;
 
-    private void AddLog(string source, string text) =>
+    private void AddLog(string source, string text)
+    {
         Prepend(Logs, new LogItem(DateTime.Now.ToString("HH:mm:ss.fff"), source, text));
+        RefreshLogs();
+    }
 
     private static Dictionary<string, string> ParseParams(string text) =>
         text.Split([' ', ';', ',', '\n'], StringSplitOptions.RemoveEmptyEntries)

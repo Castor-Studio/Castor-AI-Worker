@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Castor.AI.Dashboard.ViewModels;
 using Castor.AI.Dashboard.Views;
+using Castor.AI.Providers.Local;
 
 namespace Castor.AI.Dashboard;
 
@@ -14,12 +15,17 @@ public sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var viewModel = new MainViewModel();
+            var arguments = desktop.Args ?? [];
+            var deviceIndex = Array.IndexOf(arguments, "--device");
+            var device = deviceIndex < 0 ? "gpu" : deviceIndex + 1 < arguments.Length
+                ? arguments[deviceIndex + 1].ToLowerInvariant() : "";
+            if (device is not ("cpu" or "gpu"))
+                throw new ArgumentException("--device requires 'gpu' or 'cpu'.");
+            var viewModel = new MainViewModel(new LocalWorkerOptions { Device = device });
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
             desktop.Exit += (_, _) => viewModel.Shutdown();
 
             // --autostart [profile name]: start a session right away (demos, screenshots).
-            var arguments = desktop.Args ?? [];
             var index = Array.IndexOf(arguments, "--autostart");
             if (index >= 0)
             {
