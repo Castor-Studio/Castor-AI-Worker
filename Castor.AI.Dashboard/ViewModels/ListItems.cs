@@ -17,7 +17,15 @@ public sealed record DecisionItem(
 
 public sealed record OnAirItem(string Time, string Camera, IBrush CameraColor, string Source);
 
-public sealed record LogItem(string Time, string Source, string Text);
+public sealed record LogItem(string Time, string Source, string Text)
+{
+    public string DisplayText => $"{Time} [{Source}] {Text}";
+}
+
+public sealed record GpuAdapterChoice(int Index, string Name)
+{
+    public string Label => $"{Index} — {Name}";
+}
 
 /// <summary>Rolling decision latency percentiles (receipt time minus decision source pts).</summary>
 public sealed class LatencyWindow(double windowSeconds)

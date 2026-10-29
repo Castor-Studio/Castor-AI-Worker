@@ -25,6 +25,14 @@ dotnet test Castor.AI.Worker.sln
 dotnet run --project Castor.AI.Dashboard
 ```
 
+Pour tout vérifier depuis l'interface, ouvrir le dashboard, aller dans **Diagnostics**, choisir la carte GPU par son nom (0 par défaut), puis cliquer sur **Run CPU/GPU checks**. Le tableau affiche le fournisseur réellement utilisé, les opérateurs CPU/GPU, la parité des sorties et les latences. Pour les sessions normales, choisir **Mode session : gpu** ou **cpu** dans la barre du haut ; le choix de carte dans Diagnostics s'applique aux prochaines sessions GPU. Les progrès et les replis s'affichent dans **Logs**, que l'on peut filtrer, sélectionner et copier avec **Copier les logs**.
+
+Les modèles utilisent le GPU via DirectML par défaut sous Windows, avec repli CPU journalisé
+si le GPU ne peut pas être initialisé. Le mode CPU est accessible dans le dashboard ou avec
+`dotnet run --project Castor.AI.Dashboard -- --device cpu`.
+L'onglet Logs propose une recherche par heure, source ou message.
+Comparaison CPU/GPU : `dotnet run --project scripts/benchmark-inference/Benchmark.csproj -c Release -- 30`.
+
 Aucun script à lancer pour les modèles : le worker (et les tests) téléchargent ceux qui manquent depuis la
 release `models-v1` de ce repo, vérifiés par SHA-256. Publier un nouveau modèle : `scripts/publish-models.ps1`
 (voir `docs/architecture.md`, section 9).

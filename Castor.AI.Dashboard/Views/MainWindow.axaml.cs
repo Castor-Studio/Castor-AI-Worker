@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Castor.AI.Dashboard.ViewModels;
 
@@ -39,5 +40,11 @@ public sealed partial class MainWindow : Window
         });
 
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
+    private async void CopyLogs_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel && Clipboard is { } clipboard)
+            await clipboard.SetTextAsync(viewModel.CopyableLogs);
     }
 }

@@ -1,6 +1,6 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SessionOptions = Microsoft.ML.OnnxRuntime.SessionOptions;
+using Castor.AI.Worker.Models;
 
 namespace Castor.AI.Worker.Strategies.Football;
 
@@ -183,37 +183,45 @@ public sealed class YoloBallModel : IBallModel, IDisposable
     private readonly InferenceSession _session;
     private readonly string _inputName;
     private readonly int[] _inputShape;
+    private readonly Lock _runGate = new();
 
-    public YoloBallModel(string modelPath)
+    public YoloBallModel(string modelPath, OnnxSessionFactory? sessions = null)
     {
-        using var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
-        _session = new InferenceSession(modelPath, options);
+        (_session, ExecutionProvider) = (sessions ?? new OnnxSessionFactory()).Create(modelPath, session =>
+        {
+            var metadata = session.InputMetadata.Single();
+            var shape = metadata.Value.Dimensions;
+            if (shape is not [1, 3, var h, var w] || h != w || h <= 0)
+                throw new InvalidDataException($"Expected a static [1, 3, N, N] input in {modelPath}");
+            var input = NamedOnnxValue.CreateFromTensor(metadata.Key, new DenseTensor<float>(new float[3 * h * w], shape));
+            using var results = session.Run([input]);
+        });
         ModelPath = modelPath;
 
         var input = _session.InputMetadata.Single();
         _inputName = input.Key;
-        var dimensions = input.Value.Dimensions;
-        if (dimensions is not [1, 3, var h, var w] || h != w || h <= 0)
-        {
-            throw new InvalidDataException(
-                $"Expected a static [1, 3, N, N] input, got [{string.Join(", ", dimensions)}] in {modelPath}");
-        }
-
-        InputSize = h;
-        _inputShape = [1, 3, h, h];
+        // The warmup above validated the static square input before retaining the session.
+        _inputShape = input.Value.Dimensions;
+        InputSize = _inputShape[2];
     }
 
     public string ModelPath { get; }
+
+    public string ExecutionProvider { get; }
 
     public int InputSize { get; }
 
     public float[] Run(float[] input, out int anchors)
     {
-        var inputs = new[] { NamedOnnxValue.CreateFromTensor(_inputName, new DenseTensor<float>(input, _inputShape)) };
-        using var results = _session.Run(inputs);
-        var tensor = results[0].AsTensor<float>();
-        anchors = tensor.Dimensions[2];
-        return tensor.ToArray();
+        // DirectML forbids concurrent Run calls on a shared session.
+        lock (_runGate)
+        {
+            var inputs = new[] { NamedOnnxValue.CreateFromTensor(_inputName, new DenseTensor<float>(input, _inputShape)) };
+            using var results = _session.Run(inputs);
+            var tensor = results[0].AsTensor<float>();
+            anchors = tensor.Dimensions[2];
+            return tensor.ToArray();
+        }
     }
 
     public void Dispose() => _session.Dispose();

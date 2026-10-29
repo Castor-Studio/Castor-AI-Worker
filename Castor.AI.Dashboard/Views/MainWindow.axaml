@@ -3,6 +3,7 @@
         xmlns:vm="using:Castor.AI.Dashboard.ViewModels"
         xmlns:charts="using:Castor.AI.Dashboard.Charts"
         xmlns:profiles="using:Castor.AI.Dashboard.Profiles"
+        xmlns:diagnostics="using:Castor.AI.Dashboard.Diagnostics"
         x:Class="Castor.AI.Dashboard.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Castor AI - debug console"
@@ -86,6 +87,11 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
           <TextBlock Classes="muted" Width="280" Text="{Binding ProfileDescription}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Classes="muted" Text="Mode session" VerticalAlignment="Center" />
+            <ComboBox Width="100" ItemsSource="{Binding InferenceDevices}" SelectedItem="{Binding SelectedDevice}"
+                      IsEnabled="{Binding CanSelectDevice}" />
+          </StackPanel>
         </StackPanel>
 
         <StackPanel Grid.Column="1" Margin="12,0" Spacing="2" VerticalAlignment="Center">
@@ -298,17 +304,21 @@
       <Border Grid.Column="4" Classes="panel" Padding="6">
         <TabControl>
           <TabItem Header="Logs">
-            <ListBox ItemsSource="{Binding Logs}">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:LogItem">
-                  <TextBlock Classes="mono" TextWrapping="Wrap">
-                    <Run Text="{Binding Time}" />
-                    <Run Text=" [" /><Run Text="{Binding Source}" /><Run Text="] " />
-                    <Run Text="{Binding Text}" />
-                  </TextBlock>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+            <Grid RowDefinitions="Auto,*" ColumnDefinitions="*,Auto">
+              <TextBox Text="{Binding LogSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       Watermark="Search logs (time, source, message)" Margin="4,4,4,8"
+                       AutomationProperties.Name="Search logs" />
+              <Button Grid.Column="1" Content="Copier les logs" Click="CopyLogs_Click"
+                      Margin="0,4,4,8" VerticalAlignment="Top" />
+              <ListBox Grid.Row="1" Grid.ColumnSpan="2" ItemsSource="{Binding FilteredLogs}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:LogItem">
+                    <SelectableTextBlock FontFamily="Consolas, Menlo, monospace" FontSize="12"
+                                         TextWrapping="Wrap" Text="{Binding DisplayText}" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
           </TabItem>
 
           <TabItem Header="On air">
@@ -350,6 +360,61 @@
               <SelectableTextBlock Classes="mono" Text="{Binding CapabilitiesText}" TextWrapping="Wrap" Margin="4"
                                    FontFamily="Consolas, Menlo, monospace" FontSize="12" />
             </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Diagnostics">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="4" RowSpacing="8">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Adaptateur GPU" VerticalAlignment="Center" />
+                <ComboBox Width="320" ItemsSource="{Binding GpuAdapters}" SelectedItem="{Binding SelectedGpuAdapterChoice}"
+                          IsEnabled="{Binding CanSelectDevice}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GpuAdapterChoice">
+                      <TextBlock Text="{Binding Label}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="Run CPU/GPU checks" Command="{Binding RunDiagnosticsCommand}" />
+                <Button Content="Cancel" Command="{Binding CancelDiagnosticsCommand}"
+                        IsVisible="{Binding IsDiagnosticsRunning}" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Classes="muted" Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" />
+              <ScrollViewer Grid.Row="3">
+                <StackPanel Spacing="8">
+                  <ItemsControl ItemsSource="{Binding DeviceDiagnostics}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="diagnostics:DeviceDiagnosticResult">
+                        <Border Classes="panel" Padding="8">
+                          <StackPanel Spacing="3">
+                            <TextBlock FontWeight="SemiBold">
+                              <Run Text="{Binding Model}" />
+                              <Run Text=" · " />
+                              <Run Text="{Binding RequestedDevice}" />
+                              <Run Text=" → " />
+                              <Run Text="{Binding Provider}" />
+                            </TextBlock>
+                            <TextBlock Classes="mono muted" TextWrapping="Wrap">
+                              <Run Text="mean " /><Run Text="{Binding MeanMs, StringFormat='{}{0:F2}'}" /><Run Text=" ms · p50 " />
+                              <Run Text="{Binding P50Ms, StringFormat='{}{0:F2}'}" /><Run Text=" ms · p95 " />
+                              <Run Text="{Binding P95Ms, StringFormat='{}{0:F2}'}" /><Run Text=" ms" />
+                            </TextBlock>
+                            <TextBlock Classes="mono muted" TextWrapping="Wrap">
+                              <Run Text="Profil d’opérateurs: " /><Run Text="{Binding KernelPlacementText}" />
+                              <Run Text=" · écart sortie CPU: " /><Run Text="{Binding MaxDifferenceFromCpu, StringFormat='{}{0:G4}'}" />
+                            </TextBlock>
+                            <TextBlock Classes="mono" Text="{Binding OutputComparison}" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Classes="muted" TextWrapping="Wrap"
+                             Text="Choisissez la carte affichée pour les diagnostics et les prochaines sessions. Les entrées du diagnostic sont synthétiques. Les échecs GPU et replis CPU apparaissent dans Logs." />
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
           </TabItem>
         </TabControl>
       </Border>

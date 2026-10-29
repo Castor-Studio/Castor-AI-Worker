@@ -4,8 +4,14 @@ using Castor.AI.Worker.Strategies;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Logging.Console;
 
-// Usage: Castor.AI.Worker --domain podcast|football --pipe <name> [--parent-pid <pid>]
+// Usage: Castor.AI.Worker --domain podcast|football --pipe <name> [--parent-pid <pid>] [--device gpu|cpu] [--gpu-adapter N]
 var options = WorkerOptions.Parse(args);
+if (options.Diagnostics)
+{
+    await WorkerDiagnostics.RunAsync(line => Console.WriteLine(line), options.GpuAdapter);
+    return 0;
+}
+
 if (!StrategyCatalog.IsKnown(options.Domain))
 {
     Console.Error.WriteLine($"Unknown domain '{options.Domain}'. Known: {string.Join(", ", StrategyCatalog.KnownDomains)}");
@@ -30,6 +36,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 builder.Services.AddGrpc();
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<WorkerState>();
+builder.Services.AddSingleton(services => new OnnxSessionFactory(options.Device, services.GetRequiredService<ILogger<OnnxSessionFactory>>(), options.GpuAdapter));
 builder.Services.AddSingleton<ModelStore>();
 builder.Services.AddSingleton<StrategyCatalog>();
 builder.Services.AddHostedService<Warmup>();

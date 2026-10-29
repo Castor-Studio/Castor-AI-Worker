@@ -13,7 +13,7 @@ namespace Castor.AI.Worker.Tests.Football;
 public sealed class FootballStrategyTests : IDisposable
 {
     private static readonly Lazy<YoloBallModel> Model =
-        new(() => new YoloBallModel(TestModels.Path(ModelCatalog.FootballBall)));
+        new(() => new YoloBallModel(TestModels.Path(ModelCatalog.FootballBall), TestModels.Sessions));
 
     private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     private readonly List<VideoRingWriter> _writers = [];
