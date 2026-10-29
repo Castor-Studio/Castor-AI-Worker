@@ -6,7 +6,7 @@ namespace Castor.AI.Worker.Models;
 /// <summary>
 /// Models loaded once per process by <see cref="Warmup"/> and shared by all sessions.
 /// </summary>
-public sealed class ModelStore : IDisposable
+public sealed class ModelStore(OnnxSessionFactory? sessions = null) : IDisposable
 {
     private SileroVadModel? _vad;
     private YoloBallModel? _ball;
@@ -15,14 +15,12 @@ public sealed class ModelStore : IDisposable
 
     public YoloBallModel Ball => _ball ?? throw new InvalidOperationException("Ball detection model not loaded");
 
-    public void LoadVad(string path) => _vad = new SileroVadModel(path);
+    public void LoadVad(string path) => _vad = new SileroVadModel(path, sessions);
 
     /// <summary>Loads the YOLO model and runs it once: the first inference is much slower than the next ones.</summary>
     public void LoadBall(string path)
     {
-        var model = new YoloBallModel(path);
-        model.Run(new float[3 * model.InputSize * model.InputSize], out _);
-        _ball = model;
+        _ball = new YoloBallModel(path, sessions);
     }
 
     public void Dispose()

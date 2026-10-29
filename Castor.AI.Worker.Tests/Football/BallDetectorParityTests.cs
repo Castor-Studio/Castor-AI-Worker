@@ -16,7 +16,9 @@ public sealed class BallDetectorParityTests : IDisposable
     // Python runs the model in half precision on CUDA.
     private const float HalfPrecisionTolerance = 0.01f;
 
-    private readonly YoloBallModel _model = new(TestModels.Path(ModelCatalog.FootballBall));
+    private readonly YoloBallModel _model = new(TestModels.Path(ModelCatalog.FootballBall), TestModels.Sessions);
+
+    public BallDetectorParityTests() => TestModels.CheckProvider(_model.ExecutionProvider);
 
     [Theory]
     [InlineData("pitch_ball", false, "python_fp32")]

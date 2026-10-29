@@ -21,6 +21,15 @@ Castor.AI.Worker     ← exécutable lancé par le SDK (un domaine par process :
 | `AiOnAirChange` | Ce qui est à l'antenne a changé : `Initial`, `Ai` (Auto, l'app doit basculer), `Manual`. |
 | `LocalWorkerProvider` | Le worker tourne en local (process enfant, gRPC sur named pipe, audio et vidéo en mémoire partagée). |
 
+`LocalWorkerOptions.Device` vaut `"gpu"` par défaut : DirectML sous Windows, avec repli CPU
+et avertissement si l'initialisation GPU échoue. Utiliser `"cpu"` pour forcer le CPU :
+`new LocalWorkerProvider(new LocalWorkerOptions { Device = "cpu" })`.
+Pour cibler un adaptateur DirectML précis, définir `GpuAdapter` (indice DXGI, 0 par défaut),
+par exemple `new LocalWorkerOptions { GpuAdapter = 1 }`.
+Le worker journalise le fournisseur activé par modèle. Les opérateurs non pris en charge par
+DirectML peuvent rester sur CPU. Le petit modèle Silero peut être plus rapide en CPU ;
+voir les mesures dans [l'architecture](../docs/architecture.md).
+
 Méthodes de `AiClient` :
 
 - `StartAsync(session)`, `StopAsync()`, `RestartAsync(session)` (changement de caméras : le worker repart de zéro) ;
@@ -32,6 +41,42 @@ Méthodes de `AiClient` :
 Événements : `SuggestionReceived`, `OnAirChanged`, `StateChanged` (dont redémarrage automatique après crash du worker),
 `SessionStarted`, `StatsReceived` (métriques décrites par `Capabilities.Metrics`), `LogReceived`.
 Ils sont levés via `AiClientOptions.Dispatch` s'il est fourni (sinon sur un thread du SDK).
+
+## Paquet NuGet
+
+`Castor.AI` et `Castor.AI.Contracts` sont publiés sur GitHub Packages (`Castor-Studio`) par
+`.github/workflows/nuget-publish.yml` à chaque tag `v*.*.*` (version du paquet = tag sans le `v`) :
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Le même tag publie aussi l'exécutable du worker en asset de la release GitHub du tag
+(`.github/workflows/worker-release.yml`, voir « Déploiement »).
+
+Sur les PR vers `main` / `dev`, `.github/workflows/ci.yml` teste et emballe seulement (paquets en artifact, version `0.0.0-ci.<run>`).
+
+Côté Castor Studio, ajouter la source dans `nuget.config` :
+
+```xml
+<packageSources>
+  <add key="castor-github" value="https://nuget.pkg.github.com/Castor-Studio/index.json" />
+</packageSources>
+<packageSourceCredentials>
+  <castor-github>
+    <add key="Username" value="%GITHUB_ACTOR%" />
+    <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
+  </castor-github>
+</packageSourceCredentials>
+```
+
+`GITHUB_TOKEN` : en local un PAT avec `read:packages`, en CI le `GITHUB_TOKEN` du workflow
+(`permissions: packages: read`). Puis référencer seulement `Castor.AI` (`Castor.AI.Contracts` suit en dépendance) :
+
+```xml
+<PackageReference Include="Castor.AI" Version="1.0.0" />
+```
 
 ## Intégration dans Castor Studio
 
@@ -116,9 +161,33 @@ Aujourd'hui Studio pousse un flux encodé par scène vers une URL (`LibObsAiScen
 
 ### Déploiement
 
-Le SDK lance `Castor.AI.Worker.exe`. Il faut livrer avec Studio :
+Le SDK lance `Castor.AI.Worker.exe`. Studio livre le worker dans un dossier `ai/` à côté de l'app
+(`LocalWorkerOptions.WorkerPath`, voir l'enregistrement plus haut).
 
-- la sortie de build de `Castor.AI.Worker` (dossier `ai/` par exemple), publiée par le repo du worker.
+Chaque tag `v*.*.*` de ce repo crée une release GitHub avec deux assets (`.github/workflows/worker-release.yml`) :
+
+| Asset | Contenu |
+|---|---|
+| `Castor.AI.Worker-<version>-win-x64.zip` | `dotnet publish -r win-x64 --self-contained` : `Castor.AI.Worker.exe`, runtime .NET et DLL natives ONNX Runtime. Aucun runtime à installer sur la machine. Sans modèle. |
+| `Castor.AI.Worker-<version>-win-x64.zip.sha256` | `<sha256>  <fichier>` (format `sha256sum`). |
+
+`<version>` = tag sans le `v`, la même que le paquet `Castor.AI` du tag. **Toujours prendre le worker de la version
+de `Castor.AI` référencée par Studio** : ils partagent `castor_ai.proto` et les formats de mémoire partagée.
+
+Dans le pipeline de build / installeur de Studio (PowerShell, version lue depuis la `PackageReference` de `Castor.AI`) :
+
+```powershell
+$version = "1.0.0"
+$asset = "Castor.AI.Worker-$version-win-x64.zip"
+gh release download "v$version" --repo Castor-Studio/Castor-AI-Worker --pattern "$asset*" --dir build/ai
+$expected = (Get-Content "build/ai/$asset.sha256").Split(" ")[0]
+$actual = (Get-FileHash "build/ai/$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "$asset : SHA-256 $actual, attendu $expected" }
+Expand-Archive "build/ai/$asset" -DestinationPath <sortie de l'app>/ai -Force
+```
+
+Sans `gh`, l'URL directe est `https://github.com/Castor-Studio/Castor-AI-Worker/releases/download/v<version>/<asset>`
+(repo privé : jeton avec accès en lecture au repo, `gh` le gère).
 
 Pas de modèle dans l'installeur : le worker télécharge au démarrage ceux de son domaine qui manquent
 (voir `docs/architecture.md`, section 9). Pendant le téléchargement, `StateChanged` remonte
@@ -132,4 +201,4 @@ Le worker s'arrête tout seul si Studio meurt (surveillance du PID parent).
 - UI de choix du micro par scène (`AudioChannel`) et, pour le podcast, du rôle (`Role`) ;
 - capture audio OBS par micro vers `WriteAudio` ;
 - rendu brut par scène vers `WriteVideo` (football) ;
-- copie du worker et des modèles dans l'installeur.
+- téléchargement du zip du worker (version de `Castor.AI`) dans l'installeur, voir « Déploiement ».

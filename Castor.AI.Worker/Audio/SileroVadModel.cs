@@ -1,6 +1,6 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SessionOptions = Microsoft.ML.OnnxRuntime.SessionOptions;
+using Castor.AI.Worker.Models;
 
 namespace Castor.AI.Worker.Audio;
 
@@ -17,7 +17,7 @@ public interface ISpeechProbability
 /// Silero VAD ONNX model (v6, 16 kHz), shared by all streams.
 /// Port of <c>silero_vad.utils_vad.OnnxWrapper</c>: the recurrent state and the
 /// 64-sample context live in <see cref="SileroVadStream"/>, one per stream.
-/// <see cref="InferenceSession.Run(IReadOnlyCollection{NamedOnnxValue})"/> is thread-safe.
+/// Inference calls are serialized for DirectML; stream state remains independent.
 /// </summary>
 public sealed class SileroVadModel : IDisposable
 {
@@ -30,21 +30,27 @@ public sealed class SileroVadModel : IDisposable
     private static readonly int[] StateShape = [2, 1, 128];
 
     private readonly InferenceSession _session;
+    private readonly Lock _runGate = new();
     private readonly DenseTensor<long> _sampleRate = new(new long[] { SampleRate }, ReadOnlySpan<int>.Empty);
 
-    public SileroVadModel(string modelPath)
+    public SileroVadModel(string modelPath, OnnxSessionFactory? sessions = null)
     {
-        using var options = new SessionOptions
+        (_session, ExecutionProvider) = (sessions ?? new OnnxSessionFactory()).Create(modelPath, session =>
         {
-            InterOpNumThreads = 1,
-            IntraOpNumThreads = 1,
-            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
-        };
-        _session = new InferenceSession(modelPath, options);
+            var inputs = new[]
+            {
+                NamedOnnxValue.CreateFromTensor("input", new DenseTensor<float>(InputShape)),
+                NamedOnnxValue.CreateFromTensor("state", new DenseTensor<float>(StateShape)),
+                NamedOnnxValue.CreateFromTensor("sr", _sampleRate),
+            };
+            using var results = session.Run(inputs);
+        }, singleThreaded: true);
         ModelPath = modelPath;
     }
 
     public string ModelPath { get; }
+
+    public string ExecutionProvider { get; }
 
     public SileroVadStream CreateStream() => new(this);
 
@@ -52,33 +58,36 @@ public sealed class SileroVadModel : IDisposable
     /// <param name="state">recurrent state (2x1x128), updated in place.</param>
     internal float Run(float[] input, float[] state)
     {
-        var inputs = new[]
+        lock (_runGate)
         {
-            NamedOnnxValue.CreateFromTensor("input", new DenseTensor<float>(input, InputShape)),
-            NamedOnnxValue.CreateFromTensor("state", new DenseTensor<float>(state, StateShape)),
-            NamedOnnxValue.CreateFromTensor("sr", _sampleRate),
-        };
-
-        using var results = _session.Run(inputs);
-        float probability = 0;
-        foreach (var result in results)
-        {
-            switch (result.Name)
+            var inputs = new[]
             {
-                case "output":
-                    probability = result.AsTensor<float>().GetValue(0);
-                    break;
-                case "stateN":
-                    var next = result.AsTensor<float>();
-                    for (var i = 0; i < StateLength; i++)
-                    {
-                        state[i] = next.GetValue(i);
-                    }
-                    break;
-            }
-        }
+                NamedOnnxValue.CreateFromTensor("input", new DenseTensor<float>(input, InputShape)),
+                NamedOnnxValue.CreateFromTensor("state", new DenseTensor<float>(state, StateShape)),
+                NamedOnnxValue.CreateFromTensor("sr", _sampleRate),
+            };
 
-        return probability;
+            using var results = _session.Run(inputs);
+            float probability = 0;
+            foreach (var result in results)
+            {
+                switch (result.Name)
+                {
+                    case "output":
+                        probability = result.AsTensor<float>().GetValue(0);
+                        break;
+                    case "stateN":
+                        var next = result.AsTensor<float>();
+                        for (var i = 0; i < StateLength; i++)
+                        {
+                            state[i] = next.GetValue(i);
+                        }
+                        break;
+                }
+            }
+
+            return probability;
+        }
     }
 
     public void Dispose() => _session.Dispose();

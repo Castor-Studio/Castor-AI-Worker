@@ -44,9 +44,6 @@ public sealed partial class CameraViewModel : ObservableObject
         RawColor = Charts.Palette.At(index);
         _audioFile = profile.AudioFile is { } file && File.Exists(file) ? file : null;
         _videoFile = profile.VideoFile is { } video && File.Exists(video) ? video : null;
-        // Until the worker reports its capabilities, keep the picker available so video
-        // input can be configured before starting a session.
-        _showVideo = true;
         foreach (var action in actions.Where(a => !a.RequiresAudio || HasAudio))
         {
             Actions.Add(new CameraActionViewModel(this, action, host));
@@ -98,10 +95,6 @@ public sealed partial class CameraViewModel : ObservableObject
 
     public string VideoFileName => VideoFile is null ? "none" : Path.GetFileName(VideoFile);
 
-    /// <summary>Video row: the profile gives a video, or the worker reads video.</summary>
-    [ObservableProperty]
-    private bool _showVideo;
-
     public AiCamera ToAiCamera() => new(Id, Label, Role, AudioChannel);
 
     public void ApplyCapabilities(WorkerCapabilities capabilities)
@@ -112,9 +105,6 @@ public sealed partial class CameraViewModel : ObservableObject
             Metrics.Add(new MetricViewModel(metric));
         }
 
-        ShowVideo = VideoFile is not null
-                    || capabilities.RequiredInputs.Contains(InputKind.Video)
-                    || capabilities.OptionalInputs.Contains(InputKind.Video);
         _flagDescriptors = capabilities.CameraFlags.ToDictionary(f => f.Key);
         Flags.Clear();
     }

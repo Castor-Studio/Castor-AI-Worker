@@ -301,7 +301,7 @@ L'app est une console de debug pour l'équipe IA, **générique** : rien n'y est
 1. ~~Contracts, plus un worker « Podcast » qui ne lit que le payload, plus l'app qui affiche les décisions.~~ Fait.
 2. ~~Vidéo par SHM : sources de test (fichiers via FFmpeg, ou image fixe), downscale, doorbell.~~ Fait, voir section 8.
 3. ~~Audio par SHM : stratégie Podcast « qui parle » (Silero VAD par micro, puis caméra liée).~~ Fait, voir section 7.
-4. Inférence ONNX : ~~CPU + mesure de latence~~ (fait, section 8) ; reste DirectML et le stress test sur le nombre de caméras.
+4. Inférence ONNX : CPU et DirectML avec mesure de latence (fait, section 8) ; reste le stress test sur le nombre de caméras.
 5. Plus tard : `CloudProvider` et `AiGateway`.
 
 ---
@@ -370,7 +370,7 @@ Studio : frame BGRA de chaque scène (n'importe quelle taille) ─► AiClient.W
     ─► VideoFeed du SDK : mise à l'échelle 640x360, cadence 15 fps max par caméra
     ─► région vidéo SHM (1 par caméra, 3 slots, latest-wins) + doorbell VideoFrameReady
 Worker : dernière frame de chaque caméra ─► resize 416x416 (même interpolation que cv2.INTER_LINEAR)
-       ─► YOLO (ONNX Runtime CPU) ─► « ballon trouvé » par caméra ─► FootballFocus ─► SceneDecision
+       ─► YOLO (ONNX Runtime DirectML, repli CPU) ─► « ballon trouvé » par caméra ─► FootballFocus ─► SceneDecision
 ```
 
 - **Modèle** : `checkpoint_5.pt` de Castor-AI (YOLOv9c COCO, classe 32 « sports ball »), exporté en
@@ -404,7 +404,7 @@ Le redimensionnement reproduit la passe SIMD de `cv2.resize` (poids 11 bits) : 9
 | Plan courant | dernière décision envoyée | `CameraOnAir` (l'app) | comme le podcast : arbitre et opérateur peuvent refuser ou forcer |
 | Décision refusée | jamais reproposée | reproposée après 1 s | sinon le focus reste bloqué |
 | Flux vidéo | OpenCV lit l'URL de chaque scène | frames brutes en SHM (640x360) | pas d'encodage / décodage en local |
-| Précision | CUDA, demi-précision | ONNX Runtime CPU, float32 | pas de runtime CUDA chez l'utilisateur ; DirectML à faire |
+| Précision | CUDA, demi-précision | ONNX Runtime DirectML ou CPU, float32 | pas de runtime CUDA chez l'utilisateur ; DirectML couvre les GPU Windows compatibles |
 
 **Ordre des canaux.** `detector.py` convertit la frame en RGB, puis ultralytics la retourne à nouveau (il
 attend du BGR pour un tableau numpy) : le modèle reçoit donc du **BGR**, alors qu'il a été entraîné en RGB.
@@ -418,7 +418,109 @@ l'équipe IA sur de vraies images de match.
 - détection : ~95 ms par frame, soit ~5 frames analysées par seconde et par caméra ;
 - latence frame source → suggestion reçue : 160–205 ms (cible < 300 ms).
 
-### Tester
+### Choix du périphérique et GPU
+
+Avant l'issue #7, le module football était exclusivement CPU : le worker référençait
+`Microsoft.ML.OnnxRuntime` et créait une session sans fournisseur GPU. Le modèle ONNX pouvait
+être accéléré, mais le fournisseur DirectML prévu dans l'architecture n'était pas encore branché.
+
+Le worker utilise maintenant `Microsoft.ML.OnnxRuntime.DirectML` **1.24.4** sous Windows
+(dernière version disponible de ce paquet lors du changement ; la version CPU 1.31.0 n'a pas
+d'équivalent DirectML). Les builds sur les autres OS conservent le paquet CPU 1.24.4.
+Les sessions de YOLO et Silero passent par `OnnxSessionFactory` :
+
+- `--device gpu` (défaut) : DirectML, adaptateur DXGI 0, sous Windows avec GPU DirectX 12 compatible ;
+- `--device cpu` : CPU forcé ;
+- `--gpu-adapter N` : indice DXGI de l'adaptateur DirectML, 0 par défaut ;
+- échec d'initialisation du fournisseur GPU, de création de session ou de première inférence :
+  avertissement avec la cause, puis nouvelle session CPU ; hors Windows, même repli ;
+- journal au démarrage indiquant DirectML ou CPU pour chaque modèle ; les opérateurs non pris
+  en charge peuvent rester sur CPU même si DirectML est activé ;
+- motifs mémoire désactivés en DirectML, exécution séquentielle et verrou par modèle partagé,
+  y compris Silero dont chaque flux garde son propre état. Première inférence avant READY.
+
+DirectML utilise par défaut l'adaptateur 0, qui peut être le GPU intégré sur un portable hybride.
+Le dashboard énumère les cartes DXGI par leur nom et permet de choisir la carte avant de lancer
+les diagnostics ou une session. Sur la machine de test, 0 est l'AMD Radeon Graphics et 1 est
+la NVIDIA GeForce RTX 3070 Laptop GPU. L'indice 2 est Microsoft Basic Render Driver.
+Référence : [contraintes DirectML d'ONNX Runtime](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html).
+
+SDK : `new LocalWorkerProvider(new LocalWorkerOptions { Device = "cpu" })`.
+Dashboard : `dotnet run --project Castor.AI.Dashboard -- --device cpu`
+(ou `--device gpu`, compatible avec `--autostart`). Le choix concerne les modèles du worker
+et se fait avant son démarrage, pas dans les paramètres métier `SessionStart.params`.
+Le même choix est disponible dans **Mode session** sur la barre du haut du dashboard ; la carte
+GPU se choisit dans **Diagnostics**. Changer le mode ou la carte agit sur la prochaine session.
+L'onglet Logs permet une recherche immédiate dans l'heure, la source et le message, sans
+distinction de casse ; effacer le texte réaffiche les 300 dernières entrées conservées.
+Le texte d'une ligne est sélectionnable ; **Copier les logs** copie toutes les lignes affichées
+après application de la recherche.
+
+Sans commandes, ouvrir le dashboard, sélectionner **Diagnostics**, choisir l'adaptateur GPU,
+puis **Run CPU/GPU checks**.
+Le worker enfant vérifie YOLO Football et Silero sur CPU et GPU, compare les sorties aux limites
+de l'issue, chronomètre 30 inférences après échauffement et profile séparément les opérateurs.
+La progression, les modèles téléchargés, le fournisseur activé et les causes de repli s'affichent
+dans **Logs**. **Cancel** interrompt aussi un téléchargement ou un benchmark en cours.
+Le diagnostic utilise des entrées synthétiques pour isoler le backend d'inférence ; pour valider
+le suivi du ballon sur de vraies images, démarrer ensuite le profil Football dans le dashboard et
+fournir ses vidéos de test via les boutons de sélection de fichiers.
+
+### Comparaison CPU / GPU (Release, 28 octobre 2026)
+
+Mesure reproductible :
+
+```powershell
+dotnet run --project scripts/benchmark-inference/Benchmark.csproj -c Release -- 30
+```
+
+Windows 11 (build 26200), AMD Ryzen 9 5900HX (16 processeurs logiques), GPU disponibles :
+AMD Radeon(TM) Graphics (pilote 30.0.13002.23) et NVIDIA GeForce RTX 3070 Laptop GPU
+(pilote 32.0.15.9186). Mesure sur l'adaptateur DXGI 0, identifié ensuite comme l'AMD Radeon
+Graphics par énumération DXGI.
+ONNX Runtime 1.24.4. Entrées nulles aux
+dimensions réelles (YOLO 1×3×416×416, Silero 576 échantillons et état nul), première inférence
+et 5 appels d'échauffement exclus, 30 appels mesurés. Création des tenseurs et lecture des
+sorties côté hôte incluses ; resize BGRA, transferts SHM et décision exclus.
+Le profilage des opérateurs est exécuté séparément du chronométrage.
+
+| Modèle | Fournisseur | Moyenne | p50 | p95 |
+|---|---|---:|---:|---:|
+| YOLO football | CPU | 151,983 ms | 150,697 ms | 179,058 ms |
+| YOLO football | DirectML | 58,020 ms | 57,494 ms | 61,483 ms |
+| Silero VAD | CPU | 0,154 ms | 0,153 ms | 0,172 ms |
+| Silero VAD | DirectML + opérateurs CPU | 0,823 ms | 0,812 ms | 0,924 ms |
+
+Sur l'AMD Radeon, YOLO est environ **2,6 fois plus rapide** en DirectML. Un diagnostic du worker
+avec l'adaptateur 1 (RTX 3070 Laptop GPU) a aussi réussi : YOLO environ 10,17 ms en moyenne
+contre 142,17 ms en CPU, Silero environ 1,06 ms en GPU contre 0,14 ms en CPU.
+Silero, très petit,
+est plus lent sur GPU : le coût d'envoi et d'ordonnancement dépasse le gain de calcul sur cet essai.
+Forcer `cpu` est donc pertinent pour comparer le podcast. Ces mesures isolées ne remplacent
+pas un essai de latence de bout en bout avec plusieurs caméras et de vraies images de match.
+
+Les traces ONNX confirment l'exécution réelle : YOLO est fusionné en un graphe DirectML
+(2 événements GPU pour 2 appels profilés, aucun événement de noyau CPU). Silero produit
+108 événements DirectML et 20 CPU pour les mêmes 2 appels. L'onglet Diagnostics affiche le
+fournisseur par opérateur ; les logs donnent le fournisseur choisi au démarrage du worker.
+
+### Tests CPU / GPU
+
+```powershell
+$env:CASTOR_TEST_DEVICE = 'cpu'
+dotnet test Castor.AI.Worker.sln -c Release
+$env:CASTOR_TEST_DEVICE = 'gpu'
+$env:CASTOR_REQUIRE_GPU = '1'
+dotnet test Castor.AI.Worker.sln -c Release
+Remove-Item Env:CASTOR_TEST_DEVICE, Env:CASTOR_REQUIRE_GPU
+```
+
+`CASTOR_REQUIRE_GPU=1` fait échouer les tests de parité si le fournisseur est retombé sur CPU.
+`CASTOR_TEST_GPU_ADAPTER=1` permet de tester explicitement la RTX 3070 de la machine de test.
+Les tests couvrent aussi un adaptateur indisponible, le repli avec avertissement et la
+validation de `--device`. Les tolérances de parité Python restent inchangées.
+
+### Démo football
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts/export-football-model.ps1
