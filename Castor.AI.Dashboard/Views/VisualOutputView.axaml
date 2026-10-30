@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Castor.AI.Dashboard.ViewModels"
+             xmlns:video="using:Castor.AI.Dashboard.Video"
+             x:Class="Castor.AI.Dashboard.Views.VisualOutputView"
+             x:DataType="vm:MainViewModel">
+  <Grid Margin="0,8,0,0">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" MinHeight="180" />
+      <RowDefinition Height="10" />
+      <RowDefinition Height="220" MinHeight="120" />
+    </Grid.RowDefinitions>
+
+    <Border Classes="panel" Background="#101318">
+      <Grid RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+          <Border Classes="badge onair" Margin="0,0,10,0" VerticalAlignment="Center">
+            <TextBlock Text="PROGRAMME" FontWeight="Bold" FontSize="11" />
+          </Border>
+          <TextBlock Grid.Column="1" Text="{Binding OnAirLabel}" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock Grid.Column="2" Classes="muted" Text="Caméra actuellement à l’antenne" VerticalAlignment="Center" />
+        </Grid>
+        <Border Grid.Row="1" Background="Black" CornerRadius="4" ClipToBounds="True">
+          <Panel>
+            <TextBlock IsVisible="{Binding !HasOnAirCamera}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="Démarrez une session pour voir le rendu à l’antenne." TextWrapping="Wrap" Margin="20" />
+            <ContentControl Content="{Binding OnAirCamera}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:CameraViewModel">
+                  <Panel>
+                    <video:VideoPreviewControl Preview="{Binding Preview}" />
+                    <StackPanel IsVisible="{Binding !Preview.HasFrame}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                      <TextBlock Text="{Binding Label}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
+                      <TextBlock Classes="muted" Text="Aucune image reçue pour cette caméra" HorizontalAlignment="Center" />
+                    </StackPanel>
+                  </Panel>
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+          </Panel>
+        </Border>
+      </Grid>
+    </Border>
+
+    <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  ToolTip.Tip="Glisser pour ajuster la hauteur des miniatures" AutomationProperties.Name="Hauteur des miniatures" />
+
+    <Border Grid.Row="2" Classes="panel">
+      <Grid RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+          <TextBlock Classes="title" Text="Sources envoyées à l’IA" />
+          <TextBlock Grid.Column="1" Classes="muted" Text="Cadre rouge : à l’antenne · Take on air : bascule manuelle" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Cameras}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:CameraViewModel">
+                <Border Classes="camera" Classes.onair="{Binding IsOnAir}" Width="250" Padding="6">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,4">
+                      <Border Width="9" Height="9" Background="{Binding Color}" CornerRadius="2" Margin="0,0,6,0" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="2" Classes="badge onair" IsVisible="{Binding IsOnAir}" Margin="4,0,0,0">
+                        <TextBlock Text="ON AIR" FontSize="10" FontWeight="Bold" />
+                      </Border>
+                    </Grid>
+                    <Border Grid.Row="1" Background="Black" ClipToBounds="True">
+                      <Panel>
+                        <video:VideoPreviewControl Preview="{Binding Preview}" />
+                        <TextBlock Classes="muted" IsVisible="{Binding !Preview.HasFrame}" Text="Aucune image reçue"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Panel>
+                    </Border>
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                      <TextBlock Classes="muted" Text="{Binding VideoFileName}" VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding VideoFile}" Margin="0,0,6,0" />
+                      <Button Grid.Column="1" Content="Take on air" Command="{Binding TakeOnAirCommand}" />
+                    </Grid>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

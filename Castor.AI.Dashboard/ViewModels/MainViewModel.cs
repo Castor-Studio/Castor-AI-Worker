@@ -84,6 +84,12 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     public ObservableCollection<CameraViewModel> Cameras { get; } = [];
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOnAirCamera))]
+    private CameraViewModel? _onAirCamera;
+
+    public bool HasOnAirCamera => OnAirCamera is not null;
+
     public ObservableCollection<DecisionItem> Decisions { get; } = [];
 
     public ObservableCollection<OnAirItem> OnAirHistory { get; } = [];
@@ -375,6 +381,9 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     partial void OnSelectedProfileChanged(SessionProfile? value)
     {
+        StopVideoSources();
+        OnAirCamera = null;
+        OnAirLabel = "-";
         Cameras.Clear();
         if (value is null)
         {
@@ -433,6 +442,9 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
         catch (Exception ex)
         {
             AddLog("app", $"Start failed: {ex.Message}");
+            OnAirCamera = null;
+            OnAirLabel = "-";
+            foreach (var camera in Cameras) camera.IsOnAir = false;
             IsRunning = false;
             return;
         }
@@ -463,7 +475,11 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
         foreach (var camera in Cameras)
         {
             camera.ResetLive();
+            camera.IsOnAir = false;
         }
+
+        OnAirCamera = null;
+        OnAirLabel = "-";
 
         IsRunning = false;
     }
@@ -495,6 +511,9 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     private void ResetLiveViews()
     {
+        OnAirCamera = null;
+        OnAirLabel = "-";
+        foreach (var camera in Cameras) camera.IsOnAir = false;
         Decisions.Clear();
         OnAirHistory.Clear();
         _latency.Clear();
@@ -669,6 +688,7 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     private void OnAirChanged(AiOnAirChange change)
     {
+        OnAirCamera = Find(change.CameraId);
         foreach (var camera in Cameras)
         {
             camera.IsOnAir = camera.Id == change.CameraId;
@@ -716,6 +736,9 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
             previous.Dispose();
         }
 
+        var preview = Find(cameraId)?.Preview;
+        preview?.Stop();
+
         if (path is null)
         {
             return;
@@ -729,11 +752,14 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
         try
         {
-            _videoSources[cameraId] = VideoSource.Open(path, cameraId, format, _ai, line => Ui(() => AddLog("video", line)));
+            var publish = preview?.Start((int)format.Width, (int)format.Height);
+            _videoSources[cameraId] = VideoSource.Open(path, cameraId, format, _ai,
+                line => Ui(() => AddLog("video", line)), publish);
             AddLog("video", $"{Label(cameraId)}: {Path.GetFileName(path)}");
         }
         catch (Exception ex)
         {
+            preview?.Stop();
             AddLog("video", $"{Label(cameraId)}: cannot play {path}: {ex.Message}");
         }
     }
@@ -746,6 +772,7 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
         }
 
         _videoSources.Clear();
+        foreach (var camera in Cameras) camera.Preview.Stop();
     }
 
     private void StopAudioSources()
@@ -760,6 +787,7 @@ public sealed partial class MainViewModel : ObservableObject, ICameraActions
 
     private void OnUiTick()
     {
+        foreach (var camera in Cameras) camera.Preview.Refresh();
         var now = NowSeconds;
         ClockText = FormatPts(_ai.NowUs);
         Timeline.Advance(now);

@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Castor.AI;
 using Castor.AI.Contracts.V1;
 using Castor.AI.Dashboard.Profiles;
+using Castor.AI.Dashboard.Video;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -75,6 +76,8 @@ public sealed partial class CameraViewModel : ObservableObject
 
     /// <summary>Flags raised by the worker for this camera.</summary>
     public ObservableCollection<FlagViewModel> Flags { get; } = [];
+
+    public VideoPreview Preview { get; } = new();
 
     [ObservableProperty]
     private bool _isOnAir;
