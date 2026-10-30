@@ -10,6 +10,7 @@ repo et utilise celui-ci à travers le SDK client et l'exécutable du worker.
 | `Castor.AI.Contracts` | Contrat gRPC (`castor_ai.proto`) et formats de mémoire partagée, communs au SDK et au worker. |
 | `Castor.AI.Worker` | Process worker, un domaine par process : `podcast` (Silero VAD), `football` (détection du ballon, YOLO). |
 | `Castor.AI.Dashboard` | Console de debug Avalonia pour l'équipe IA, pilotée par `profiles/*.json`. |
+| `Castor.AI.Dashboard.Tests` | Tests des aperçus vidéo du dashboard (pixels, rafraîchissement, arrêt et concurrence). |
 | `Castor.AI.Tests`, `Castor.AI.Worker.Tests` | Tests xUnit, dont la parité avec les modules Python de Castor-AI. |
 
 Architecture, format de la mémoire partagée, stratégies par domaine et gestion des modèles :
@@ -31,6 +32,13 @@ Les modèles utilisent le GPU via DirectML par défaut sous Windows, avec repli 
 si le GPU ne peut pas être initialisé. Le mode CPU est accessible dans le dashboard ou avec
 `dotnet run --project Castor.AI.Dashboard -- --device cpu`.
 L'onglet Logs propose une recherche par heure, source ou message.
+Dans **Dashboard**, glisser les séparateurs pour ajuster la hauteur des caméras et de la timeline,
+ainsi que la largeur des décisions, graphiques et logs. Les panneaux conservent un défilement quand leur contenu dépasse.
+L'onglet **Rendu visuel** affiche en grand la caméra à l'antenne et, en bas, les sources vidéo de chaque caméra.
+Les aperçus reprennent les images acceptées par le SDK pour l'IA (rafraîchies jusqu'à 10 fois par seconde),
+avec un cadre rouge sur la caméra à l'antenne. **Take on air** permet une bascule manuelle.
+Le séparateur horizontal ajuste la hauteur des miniatures. Choisir les fichiers dans **Dashboard**,
+puis démarrer une session : les caméras sans vidéo ou les workers sans entrée vidéo affichent un emplacement vide.
 Comparaison CPU/GPU : `dotnet run --project scripts/benchmark-inference/Benchmark.csproj -c Release -- 30`.
 
 Aucun script à lancer pour les modèles : le worker (et les tests) téléchargent ceux qui manquent depuis la

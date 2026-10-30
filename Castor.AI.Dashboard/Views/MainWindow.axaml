@@ -4,6 +4,7 @@
         xmlns:charts="using:Castor.AI.Dashboard.Charts"
         xmlns:profiles="using:Castor.AI.Dashboard.Profiles"
         xmlns:diagnostics="using:Castor.AI.Dashboard.Diagnostics"
+        xmlns:views="using:Castor.AI.Dashboard.Views"
         x:Class="Castor.AI.Dashboard.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Castor AI - debug console"
@@ -71,22 +72,32 @@
       <Setter Property="MinHeight" Value="32" />
       <Setter Property="Padding" Value="10,4" />
     </Style>
+    <Style Selector="GridSplitter">
+      <Setter Property="Background" Value="#24FFFFFF" />
+      <Setter Property="Margin" Value="2" />
+    </Style>
+    <Style Selector="GridSplitter:pointerover">
+      <Setter Property="Background" Value="#1E88E5" />
+    </Style>
+    <Style Selector="GridSplitter:focus-visible">
+      <Setter Property="Background" Value="#1E88E5" />
+    </Style>
   </Window.Styles>
 
   <DockPanel Margin="12">
 
     <!-- Session bar -->
     <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,10">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+      <Grid ColumnDefinitions="2*,2*,Auto,2*,Auto">
         <StackPanel Spacing="4" VerticalAlignment="Center">
-          <ComboBox Width="280" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding IsIdle}">
+          <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding IsIdle}">
             <ComboBox.ItemTemplate>
               <DataTemplate x:DataType="profiles:SessionProfile">
-                <TextBlock Text="{Binding Name}" />
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-          <TextBlock Classes="muted" Width="280" Text="{Binding ProfileDescription}" TextWrapping="Wrap" />
+          <TextBlock Classes="muted" Text="{Binding ProfileDescription}" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="6">
             <TextBlock Classes="muted" Text="Mode session" VerticalAlignment="Center" />
             <ComboBox Width="100" ItemsSource="{Binding InferenceDevices}" SelectedItem="{Binding SelectedDevice}"
@@ -96,7 +107,7 @@
 
         <StackPanel Grid.Column="1" Margin="12,0" Spacing="2" VerticalAlignment="Center">
           <TextBlock Classes="muted" Text="Session params (key=value)" />
-          <TextBox Classes="mono" Width="300" Text="{Binding ParamsText}" IsEnabled="{Binding IsIdle}" />
+          <TextBox Classes="mono" Text="{Binding ParamsText}" IsEnabled="{Binding IsIdle}" />
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -105,7 +116,7 @@
         </StackPanel>
 
         <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
-          <TextBlock>
+          <TextBlock TextTrimming="CharacterEllipsis">
             <Run Text="{Binding ProviderState}" FontWeight="Bold" />
             <Run Text=" — " />
             <Run Text="{Binding StateDetail}" />
@@ -123,8 +134,20 @@
       </Grid>
     </Border>
 
+    <TabControl>
+      <TabItem Header="Dashboard">
+        <Grid Margin="0,8,0,0">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="3*" MinHeight="100" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="1.5*" MinHeight="90" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="3*" MinHeight="140" />
+          </Grid.RowDefinitions>
+
     <!-- Cameras -->
-    <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Cameras}" Margin="0,0,-10,10">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+    <ItemsControl ItemsSource="{Binding Cameras}" Margin="0,0,-10,0">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <UniformGrid Rows="1" />
@@ -132,7 +155,7 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:CameraViewModel">
-          <Border Classes="camera" Classes.onair="{Binding IsOnAir}">
+          <Border Classes="camera" Classes.onair="{Binding IsOnAir}" MinWidth="240">
             <StackPanel Spacing="6">
               <Grid ColumnDefinitions="Auto,*,Auto">
                 <Border Width="12" Height="12" CornerRadius="3" Background="{Binding Color}" Margin="0,0,8,0" VerticalAlignment="Center" />
@@ -224,20 +247,36 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
+    </ScrollViewer>
+    <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  ToolTip.Tip="Glisser pour ajuster les caméras et la timeline" AutomationProperties.Name="Hauteur des caméras" />
+
     <!-- On-air timeline -->
-    <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,10">
+    <Border Grid.Row="2" Classes="panel">
       <DockPanel>
         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
           <TextBlock Classes="title" Text="On air timeline (last 60 s)" />
           <TextBlock Grid.Column="1" Classes="muted"
                      Text="solid = AI · faded dashed = manual · pale = initial · ▼ filled = suggestion accepted, hollow = rejected" />
         </Grid>
-        <charts:ShotTimeline Model="{Binding Timeline}" Height="150" />
+        <charts:ShotTimeline Model="{Binding Timeline}" />
       </DockPanel>
     </Border>
 
+    <GridSplitter Grid.Row="3" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  ToolTip.Tip="Glisser pour ajuster la timeline et les diagnostics" AutomationProperties.Name="Hauteur de la timeline" />
+
     <!-- Decisions | charts | tabs -->
-    <Grid ColumnDefinitions="5*,10,4*,10,4*">
+    <Grid Grid.Row="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="5*" MinWidth="230" />
+        <ColumnDefinition Width="10" />
+        <ColumnDefinition Width="4*" MinWidth="180" />
+        <ColumnDefinition Width="10" />
+        <ColumnDefinition Width="4*" MinWidth="260" />
+      </Grid.ColumnDefinitions>
 
       <Border Classes="panel">
         <DockPanel>
@@ -254,7 +293,7 @@
             <TextBlock Grid.Column="4" Classes="muted" Text="worker" />
             <TextBlock Grid.Column="5" Classes="muted" Text="arbiter" />
           </Grid>
-          <ListBox ItemsSource="{Binding Decisions}">
+          <ListBox ItemsSource="{Binding Decisions}" ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:DecisionItem">
                 <StackPanel Spacing="1">
@@ -284,6 +323,10 @@
         </DockPanel>
       </Border>
 
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    ToolTip.Tip="Glisser pour ajuster les décisions et les graphiques" AutomationProperties.Name="Largeur des décisions" />
+
       <Border Grid.Column="2" Classes="panel">
         <ScrollViewer>
           <StackPanel Spacing="8">
@@ -300,6 +343,10 @@
           </StackPanel>
         </ScrollViewer>
       </Border>
+
+      <GridSplitter Grid.Column="3" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    ToolTip.Tip="Glisser pour ajuster les graphiques et les logs" AutomationProperties.Name="Largeur des graphiques" />
 
       <Border Grid.Column="4" Classes="panel" Padding="6">
         <TabControl>
@@ -419,5 +466,11 @@
         </TabControl>
       </Border>
     </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Rendu visuel">
+        <views:VisualOutputView />
+      </TabItem>
+    </TabControl>
   </DockPanel>
 </Window>

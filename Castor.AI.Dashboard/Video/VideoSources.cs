@@ -16,10 +16,11 @@ public static class VideoSource
 {
     private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".bmp"];
 
-    public static IDisposable Open(string path, string cameraId, VideoFormat format, AiClient client, Action<string> log) =>
+    public static IDisposable Open(string path, string cameraId, VideoFormat format, AiClient client, Action<string> log,
+        Action<byte[], int, int>? preview = null) =>
         ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant())
-            ? new ImageVideoSource(path, cameraId, format, client)
-            : new FfmpegVideoSource(path, cameraId, format, client, log);
+            ? new ImageVideoSource(path, cameraId, format, client, preview)
+            : new FfmpegVideoSource(path, cameraId, format, client, log, preview);
 }
 
 /// <summary>A still image sent at the worker fps. Decoded and scaled once by Avalonia.</summary>
@@ -27,7 +28,8 @@ public sealed class ImageVideoSource : IDisposable
 {
     private readonly Timer _timer;
 
-    public ImageVideoSource(string path, string cameraId, VideoFormat format, AiClient client)
+    public ImageVideoSource(string path, string cameraId, VideoFormat format, AiClient client,
+        Action<byte[], int, int>? preview = null)
     {
         var width = (int)format.Width;
         var height = (int)format.Height;
@@ -54,7 +56,10 @@ public sealed class ImageVideoSource : IDisposable
         }
 
         var period = TimeSpan.FromSeconds(1 / (format.Fps > 0 ? format.Fps : 15));
-        _timer = new Timer(_ => client.WriteVideo(cameraId, pixels, width, height), null, TimeSpan.Zero, period);
+        _timer = new Timer(_ =>
+        {
+            if (client.WriteVideo(cameraId, pixels, width, height)) preview?.Invoke(pixels, width, height);
+        }, null, TimeSpan.Zero, period);
     }
 
     public void Dispose() => _timer.Dispose();
@@ -73,14 +78,17 @@ public sealed class FfmpegVideoSource : IDisposable
     private readonly string _cameraId;
     private readonly int _width;
     private readonly int _height;
+    private readonly Action<byte[], int, int>? _preview;
     private volatile bool _running = true;
 
-    public FfmpegVideoSource(string path, string cameraId, VideoFormat format, AiClient client, Action<string> log)
+    public FfmpegVideoSource(string path, string cameraId, VideoFormat format, AiClient client, Action<string> log,
+        Action<byte[], int, int>? preview = null)
     {
         _client = client;
         _cameraId = cameraId;
         _width = (int)format.Width;
         _height = (int)format.Height;
+        _preview = preview;
         var fps = format.Fps > 0 ? format.Fps : 15;
         var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable(FfmpegEnvironmentVariable) ?? "ffmpeg")
         {
@@ -151,7 +159,8 @@ public sealed class FfmpegVideoSource : IDisposable
             while (_running)
             {
                 stream.ReadExactly(frame);
-                _client.WriteVideo(_cameraId, frame, _width, _height);
+                if (_client.WriteVideo(_cameraId, frame, _width, _height))
+                    _preview?.Invoke(frame, _width, _height);
             }
         }
         catch (Exception) when (!_running)
